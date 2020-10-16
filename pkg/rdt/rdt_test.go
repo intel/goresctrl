@@ -18,6 +18,7 @@ package rdt
 
 import (
 	"io/ioutil"
+	stdlog "log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -141,11 +142,12 @@ partitions:
 
 // TestRdt tests the rdt public API, i.e. exported functionality of the package
 func TestRdt(t *testing.T) {
-	log.EnableDebug(true)
-
 	//
 	// 1. test uninitialized interface
 	//
+	l := NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt-test ] ", 0))
+	SetLogger(l)
+
 	rdt = &control{Logger: log}
 
 	classes := GetClasses()

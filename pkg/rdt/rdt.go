@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	stdlog "log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -28,7 +29,6 @@ import (
 	"syscall"
 
 	pkgcfg "github.com/intel/cri-resource-manager/pkg/config"
-	logger "github.com/intel/cri-resource-manager/pkg/log"
 	"github.com/marquiz/goresctrl/pkg/utils"
 )
 
@@ -43,14 +43,14 @@ const (
 )
 
 type control struct {
-	logger.Logger
+	Logger
 
 	conf    config
 	info    info
 	classes map[string]*ctrlGroup
 }
 
-var log logger.Logger = logger.NewLogger("rdt")
+var log Logger = NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt ] ", 0))
 
 var rdt *control = &control{
 	Logger: log,
@@ -133,6 +133,12 @@ type monGroup struct {
 type resctrlGroup struct {
 	name   string
 	parent *ctrlGroup // parent for MON groups
+}
+
+// SetLogger sets the logger instance to be used by the package. This function
+// may be called even before Initialize().
+func SetLogger(l Logger) {
+	log = l
 }
 
 // Initialize discovers RDT support and initializes the  rdtControl singleton interface
