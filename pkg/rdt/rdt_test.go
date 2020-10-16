@@ -28,7 +28,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/intel/cri-resource-manager/pkg/utils"
-	testdata "github.com/intel/cri-resource-manager/test/data/rdt"
+	testdata "github.com/marquiz/goresctrl/test/data"
 )
 
 type mockResctrlFs struct {
