@@ -32,7 +32,6 @@ import (
 )
 
 const (
-	resctrlGroupPrefix = "cri-resmgr."
 	// RootClassName is the name we use in our config for the special class
 	// that configures the "root" resctrl group of the system
 	RootClassName = "SYSTEM_DEFAULT"
@@ -41,9 +40,10 @@ const (
 type control struct {
 	Logger
 
-	conf    config
-	info    info
-	classes map[string]*ctrlGroup
+	resctrlGroupPrefix string
+	conf               config
+	info               info
+	classes            map[string]*ctrlGroup
 }
 
 var log Logger = NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt ] ", 0))
@@ -52,7 +52,7 @@ var rdt *control = &control{
 	Logger: log,
 }
 
-// CtrlGroup defines the interface of one cri-resmgr managed RDT class
+// CtrlGroup defines the interface of one goresctrl managed RDT class
 type CtrlGroup interface {
 	ResctrlGroup
 
@@ -127,6 +127,7 @@ type monGroup struct {
 }
 
 type resctrlGroup struct {
+	prefix string
 	name   string
 	parent *ctrlGroup // parent for MON groups
 }
@@ -141,10 +142,10 @@ func SetLogger(l Logger) {
 // NOTE: should only be called once in order to avoid adding multiple notifiers
 // TODO: support make multiple initializations, allowing e.g. "hot-plug" when
 // 		 resctrl filesystem is mounted
-func Initialize() error {
+func Initialize(resctrlGroupPrefix string) error {
 	var err error
 
-	rdt = &control{Logger: log}
+	rdt = &control{Logger: log, resctrlGroupPrefix: resctrlGroupPrefix}
 
 	// Get info from the resctrl filesystem
 	rdt.info, err = getRdtInfo()
@@ -260,14 +261,14 @@ func (c *control) configureResctrl(conf config) error {
 
 	// Start with fresh set of classes. Root class is always present
 	c.classes = make(map[string]*ctrlGroup, len(conf.Classes))
-	c.classes[RootClassName], err = newCtrlGroup(RootClassName)
+	c.classes[RootClassName], err = newCtrlGroup(c.resctrlGroupPrefix, RootClassName)
 	if err != nil {
 		return err
 	}
 
 	// Try to apply given configuration
 	for name, class := range conf.Classes {
-		cg, err := newCtrlGroup(name)
+		cg, err := newCtrlGroup(c.resctrlGroupPrefix, name)
 		if err != nil {
 			return err
 		}
@@ -284,7 +285,7 @@ func (c *control) configureResctrl(conf config) error {
 }
 
 func (c *control) classesFromResctrlFs() ([]ctrlGroup, error) {
-	r, err := resctrlGroupsFromFs(c.info.resctrlPath)
+	r, err := resctrlGroupsFromFs(c.resctrlGroupPrefix, c.info.resctrlPath)
 	if err != nil {
 		return nil, err
 	}
@@ -318,9 +319,9 @@ func (c *control) cmdError(origErr error) error {
 	return origErr
 }
 
-func newCtrlGroup(name string) (*ctrlGroup, error) {
+func newCtrlGroup(prefix string, name string) (*ctrlGroup, error) {
 	cg := &ctrlGroup{
-		resctrlGroup: resctrlGroup{name: name},
+		resctrlGroup: resctrlGroup{prefix: prefix, name: name},
 		monGroups:    make(map[string]*monGroup),
 	}
 
@@ -328,7 +329,7 @@ func newCtrlGroup(name string) (*ctrlGroup, error) {
 		return nil, err
 	}
 
-	// Reomve existing cri-resmgr specific monitor groups
+	// Reomve existing goresctrl specific monitor groups
 	// TODO: consider if these should be preserved and handled more intelligently
 	mgs, err := cg.monGroupsFromResctrlFs()
 	if err != nil {
@@ -349,7 +350,7 @@ func (c *ctrlGroup) CreateMonGroup(name string, annotations map[string]string) (
 	}
 
 	log.Debug("creating monitoring group %s/%s", c.name, name)
-	mg, err := newMonGroup(name, c, annotations)
+	mg, err := newMonGroup(c.prefix, name, c, annotations)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new monitoring group %q: %v", name, err)
 	}
@@ -445,7 +446,7 @@ func (c *ctrlGroup) configure(name string, class classConfig,
 }
 
 func (c *ctrlGroup) monGroupsFromResctrlFs() ([]*monGroup, error) {
-	r, err := resctrlGroupsFromFs(c.path("mon_groups"))
+	r, err := resctrlGroupsFromFs(c.prefix, c.path("mon_groups"))
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
@@ -568,20 +569,20 @@ func (r *resctrlGroup) relPath(elem ...string) string {
 		if r.name == RootClassName {
 			return filepath.Join(elem...)
 		}
-		return filepath.Join(append([]string{resctrlGroupPrefix + r.name}, elem...)...)
+		return filepath.Join(append([]string{r.prefix + r.name}, elem...)...)
 	}
 	// Parent is only intended for MON groups - non-root CTRL groups are considered
 	// as peers to the root CTRL group (as they are in HW) and do not have a parent
-	return r.parent.relPath(append([]string{"mon_groups", resctrlGroupPrefix + r.name}, elem...)...)
+	return r.parent.relPath(append([]string{"mon_groups", r.prefix + r.name}, elem...)...)
 }
 
 func (r *resctrlGroup) path(elem ...string) string {
 	return filepath.Join(rdt.info.resctrlPath, r.relPath(elem...))
 }
 
-func newMonGroup(name string, parent *ctrlGroup, annotations map[string]string) (*monGroup, error) {
+func newMonGroup(prefix string, name string, parent *ctrlGroup, annotations map[string]string) (*monGroup, error) {
 	mg := &monGroup{
-		resctrlGroup: resctrlGroup{name: name, parent: parent},
+		resctrlGroup: resctrlGroup{prefix: prefix, name: name, parent: parent},
 		annotations:  make(map[string]string, len(annotations))}
 
 	if err := os.Mkdir(mg.path(""), 0755); err != nil && !os.IsExist(err) {
@@ -606,7 +607,7 @@ func (m *monGroup) GetAnnotations() map[string]string {
 	return a
 }
 
-func resctrlGroupsFromFs(path string) ([]resctrlGroup, error) {
+func resctrlGroupsFromFs(prefix string, path string) ([]resctrlGroup, error) {
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
 		return nil, err
@@ -615,8 +616,12 @@ func resctrlGroupsFromFs(path string) ([]resctrlGroup, error) {
 	grps := make([]resctrlGroup, 0, len(files))
 	for _, file := range files {
 		filename := file.Name()
-		if strings.HasPrefix(filename, resctrlGroupPrefix) {
-			grps = append(grps, resctrlGroup{name: filename[len(resctrlGroupPrefix):]})
+		if strings.HasPrefix(filename, prefix) {
+			grps = append(grps,
+				resctrlGroup{
+					prefix: prefix,
+					name:   filename[len(prefix):],
+				})
 		}
 	}
 	return grps, nil

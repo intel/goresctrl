@@ -44,7 +44,7 @@ func newMockResctrlFs(t *testing.T, name, mountOpts string) (*mockResctrlFs, err
 	m := &mockResctrlFs{}
 
 	m.origDir = testdata.Path(name)
-	m.baseDir, err = ioutil.TempDir("", "cri-resmgr.test.")
+	m.baseDir, err = ioutil.TempDir("", "goresctrl.test.")
 	if err != nil {
 		return nil, err
 	}
@@ -175,10 +175,10 @@ func TestRdt(t *testing.T) {
 	}
 
 	// Check that the path() and relPath() methods work correctly
-	if p := rdt.classes["Guaranteed"].path("foo"); p != filepath.Join(mockFs.baseDir, "resctrl", "cri-resmgr.Guaranteed", "foo") {
+	if p := rdt.classes["Guaranteed"].path("foo"); p != filepath.Join(mockFs.baseDir, "resctrl", "goresctrl.Guaranteed", "foo") {
 		t.Errorf("path() returned wrong path %q", p)
 	}
-	if p := rdt.classes["Guaranteed"].relPath("foo"); p != filepath.Join("cri-resmgr.Guaranteed", "foo") {
+	if p := rdt.classes["Guaranteed"].relPath("foo"); p != filepath.Join("goresctrl.Guaranteed", "foo") {
 		t.Errorf("relPath() returned wrong path %q", p)
 	}
 
@@ -190,7 +190,7 @@ func TestRdt(t *testing.T) {
 	verifyTextFile(t, rdt.classes["Guaranteed"].path("schemata"),
 		"L3:0=fff00;1=fff00;2=fff00;3=fff00\nMB:0=100;1=100;2=100;3=100\n")
 
-	// Verify that existing cri-resmgr monitor groups were removed
+	// Verify that existing goresctrl monitor groups were removed
 	for _, cls := range []string{RootClassName, "Guaranteed"} {
 		files, _ := ioutil.ReadDir(rdt.classes[cls].path("mon_groups"))
 		for _, f := range files {
@@ -257,17 +257,17 @@ func TestRdt(t *testing.T) {
 		t.Errorf("unexpected monitoring groups: %v", mgs)
 	}
 
-	mgPath := rdt.classes["Guaranteed"].path("mon_groups", "cri-resmgr."+mgName)
+	mgPath := rdt.classes["Guaranteed"].path("mon_groups", "goresctrl."+mgName)
 	if _, err := os.Stat(mgPath); err != nil {
 		t.Errorf("mon group directory not found: %v", err)
 	}
 
 	// Check that the monGroup.path() and relPath() methods work correctly
 	mgi := rdt.classes["Guaranteed"].monGroups[mgName]
-	if p := mgi.path("foo"); p != filepath.Join(mockFs.baseDir, "resctrl", "cri-resmgr.Guaranteed", "mon_groups", "cri-resmgr."+mgName, "foo") {
+	if p := mgi.path("foo"); p != filepath.Join(mockFs.baseDir, "resctrl", "goresctrl.Guaranteed", "mon_groups", "goresctrl."+mgName, "foo") {
 		t.Errorf("path() returned wrong path %q", p)
 	}
-	if p := mgi.relPath("foo"); p != filepath.Join("cri-resmgr.Guaranteed", "mon_groups", "cri-resmgr."+mgName, "foo") {
+	if p := mgi.relPath("foo"); p != filepath.Join("goresctrl.Guaranteed", "mon_groups", "goresctrl."+mgName, "foo") {
 		t.Errorf("relPath() returned wrong path %q", p)
 	}
 
