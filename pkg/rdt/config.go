@@ -25,7 +25,7 @@ import (
 	"strings"
 
 	pkgcfg "github.com/intel/cri-resource-manager/pkg/config"
-	"github.com/intel/cri-resource-manager/pkg/utils"
+	"github.com/marquiz/goresctrl/pkg/utils"
 )
 
 // options represents the raw RDT configuration data from the configmap

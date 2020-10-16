@@ -29,7 +29,7 @@ import (
 
 	pkgcfg "github.com/intel/cri-resource-manager/pkg/config"
 	logger "github.com/intel/cri-resource-manager/pkg/log"
-	"github.com/intel/cri-resource-manager/pkg/utils"
+	"github.com/marquiz/goresctrl/pkg/utils"
 )
 
 const (

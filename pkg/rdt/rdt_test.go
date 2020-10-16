@@ -27,7 +27,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/intel/cri-resource-manager/pkg/utils"
+	"github.com/marquiz/goresctrl/pkg/utils"
 	testdata "github.com/marquiz/goresctrl/test/data"
 )
 
