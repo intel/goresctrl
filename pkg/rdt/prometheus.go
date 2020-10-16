@@ -21,8 +21,6 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-
-	"github.com/intel/cri-resource-manager/pkg/metrics"
 )
 
 var customLabels []string = []string{}
@@ -126,11 +124,4 @@ func (c *collector) collectGroupMetrics(ch chan<- prometheus.Metric, mg MonGroup
 }
 
 func (r *resctrlGroup) updatePrometheusMetric(ch chan<- prometheus.Metric) {
-}
-
-func init() {
-	err := metrics.RegisterCollector("rdt", NewCollector)
-	if err != nil {
-		log.Error("failed register rdt collector: %v", err)
-	}
 }
