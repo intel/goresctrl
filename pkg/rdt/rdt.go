@@ -28,14 +28,10 @@ import (
 	"strings"
 	"syscall"
 
-	pkgcfg "github.com/intel/cri-resource-manager/pkg/config"
 	"github.com/marquiz/goresctrl/pkg/utils"
 )
 
 const (
-	// ConfigModuleName is the configuration section of blockio class definitions
-	ConfigModuleName = "rdt"
-
 	resctrlGroupPrefix = "cri-resmgr."
 	// RootClassName is the name we use in our config for the special class
 	// that configures the "root" resctrl group of the system
@@ -166,8 +162,6 @@ func Initialize() error {
 		return rdtError("configuration failed: %v", err)
 	}
 
-	pkgcfg.GetModule("rdt").AddNotify(rdt.configNotify)
-
 	return nil
 }
 
@@ -220,7 +214,7 @@ func (c *control) getMonFeatures() map[MonResource][]string {
 	return ret
 }
 
-func (c *control) configNotify(event pkgcfg.Event, source pkgcfg.Source) error {
+func (c *control) configNotify(event string) error {
 	c.Info("configuration %s", event)
 
 	conf, err := opt.resolve()

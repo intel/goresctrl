@@ -107,7 +107,7 @@ func setTestConfig(t *testing.T, data string) {
 }
 
 const rdtTestConfig string = `
-options:
+config:
   l3:
     optional: false
   mb:
