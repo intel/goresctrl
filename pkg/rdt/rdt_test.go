@@ -32,6 +32,8 @@ import (
 	testdata "github.com/marquiz/goresctrl/test/data"
 )
 
+const mockGroupPrefix string = "goresctrl."
+
 type mockResctrlFs struct {
 	t *testing.T
 
@@ -68,7 +70,7 @@ func (m *mockResctrlFs) delete() error {
 }
 
 func (m *mockResctrlFs) initMockMonGroup(class, name string) {
-	m.copyFromOrig(filepath.Join("mon_groups", "example"), filepath.Join(resctrlGroupPrefix+class, "mon_groups", resctrlGroupPrefix+name))
+	m.copyFromOrig(filepath.Join("mon_groups", "example"), filepath.Join(mockGroupPrefix+class, "mon_groups", mockGroupPrefix+name))
 }
 
 func (m *mockResctrlFs) copyFromOrig(relSrc, relDst string) {
@@ -170,7 +172,7 @@ func TestRdt(t *testing.T) {
 
 	setTestConfig(t, rdtTestConfig)
 
-	if err := Initialize(); err != nil {
+	if err := Initialize(mockGroupPrefix); err != nil {
 		t.Fatalf("rdt initialization failed: %v", err)
 	}
 
@@ -194,7 +196,7 @@ func TestRdt(t *testing.T) {
 	for _, cls := range []string{RootClassName, "Guaranteed"} {
 		files, _ := ioutil.ReadDir(rdt.classes[cls].path("mon_groups"))
 		for _, f := range files {
-			if strings.HasPrefix(resctrlGroupPrefix, f.Name()) {
+			if strings.HasPrefix(mockGroupPrefix, f.Name()) {
 				t.Errorf("unexpected monitor group found %q", f.Name())
 			}
 		}
