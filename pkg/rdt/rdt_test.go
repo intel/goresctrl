@@ -102,10 +102,12 @@ func verifyTextFile(t *testing.T, path, content string) {
 	}
 }
 
-func setTestConfig(t *testing.T, data string) {
-	if err := yaml.Unmarshal([]byte(data), opt); err != nil {
+func parseTestConfig(t *testing.T, data string) *Config {
+	c := &Config{}
+	if err := yaml.Unmarshal([]byte(data), c); err != nil {
 		t.Fatalf("failed to parse rdt config: %v", err)
 	}
+	return c
 }
 
 const rdtTestConfig string = `
@@ -170,9 +172,8 @@ func TestRdt(t *testing.T) {
 	}
 	defer mockFs.delete()
 
-	setTestConfig(t, rdtTestConfig)
-
-	if err := Initialize(mockGroupPrefix); err != nil {
+	conf := parseTestConfig(t, rdtTestConfig)
+	if err := Initialize(mockGroupPrefix, conf); err != nil {
 		t.Fatalf("rdt initialization failed: %v", err)
 	}
 

@@ -959,11 +959,3 @@ func parseMBAllocation(raw []interface{}) (uint64, error) {
 	}
 	return 0, fmt.Errorf("missing '%%' value from mbSchema; required because percentage-based MBA allocation is enabled in the system")
 }
-
-// Currently active set of "raw" configuration
-var opt = DefaultConfig()
-
-// DefaultConfig returns a new instance of "raw" config set to their defaults
-func DefaultConfig() *Config {
-	return &Config{}
-}

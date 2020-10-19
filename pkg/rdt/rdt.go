@@ -42,6 +42,7 @@ type control struct {
 
 	resctrlGroupPrefix string
 	conf               config
+	rawConf            Config
 	info               info
 	classes            map[string]*ctrlGroup
 }
@@ -142,7 +143,7 @@ func SetLogger(l Logger) {
 // NOTE: should only be called once in order to avoid adding multiple notifiers
 // TODO: support make multiple initializations, allowing e.g. "hot-plug" when
 // 		 resctrl filesystem is mounted
-func Initialize(resctrlGroupPrefix string) error {
+func Initialize(resctrlGroupPrefix string, conf *Config) error {
 	var err error
 
 	rdt = &control{Logger: log, resctrlGroupPrefix: resctrlGroupPrefix}
@@ -154,16 +155,17 @@ func Initialize(resctrlGroupPrefix string) error {
 	}
 
 	// Configure resctrl
-	rdt.conf, err = opt.resolve()
-	if err != nil {
-		return rdtError("invalid configuration: %v", err)
-	}
-
-	if err := rdt.configureResctrl(rdt.conf); err != nil {
+	if err = rdt.setConfig(conf); err != nil {
 		return rdtError("configuration failed: %v", err)
 	}
 
 	return nil
+}
+
+// SetConfig parses new configuration and reconfigures the resctrl filesystem
+// accordingly
+func SetConfig(c *Config) error {
+	return rdt.setConfig(c)
 }
 
 // GetClass returns one RDT class
@@ -215,10 +217,10 @@ func (c *control) getMonFeatures() map[MonResource][]string {
 	return ret
 }
 
-func (c *control) configNotify(event string) error {
-	c.Info("configuration %s", event)
+func (c *control) setConfig(newConfig *Config) error {
+	c.Info("configuration update")
 
-	conf, err := opt.resolve()
+	conf, err := (*newConfig).resolve()
 	if err != nil {
 		return rdtError("invalid configuration: %v", err)
 	}
@@ -229,6 +231,8 @@ func (c *control) configNotify(event string) error {
 	}
 
 	c.conf = conf
+	// TODO: we'd better create a deep copy
+	c.rawConf = *newConfig
 	c.Info("configuration finished")
 
 	return nil
