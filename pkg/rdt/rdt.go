@@ -139,13 +139,11 @@ func SetLogger(l Logger) {
 }
 
 // Initialize discovers RDT support and initializes the  rdtControl singleton interface
-// NOTE: should only be called once in order to avoid adding multiple notifiers
-// TODO: support make multiple initializations, allowing e.g. "hot-plug" when
-// 		 resctrl filesystem is mounted
 func Initialize(resctrlGroupPrefix string, conf *Config) error {
 	var err error
 
-	rdt = &control{Logger: log, resctrlGroupPrefix: resctrlGroupPrefix}
+	info = nil
+	rdt = nil
 
 	// Get info from the resctrl filesystem
 	info, err = getRdtInfo()
@@ -153,10 +151,14 @@ func Initialize(resctrlGroupPrefix string, conf *Config) error {
 		return err
 	}
 
+	r := &control{Logger: log, resctrlGroupPrefix: resctrlGroupPrefix}
+
 	// Configure resctrl
-	if err = rdt.setConfig(conf); err != nil {
+	if err = r.setConfig(conf); err != nil {
 		return rdtError("configuration failed: %v", err)
 	}
+
+	rdt = r
 
 	return nil
 }
