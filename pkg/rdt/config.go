@@ -260,8 +260,8 @@ func (a l3PctRangeAllocation) Overlay(baseMask Bitmask) (Bitmask, error) {
 	if bits.OnesCount64(uint64(baseMask)) != int(baseMaskNumBits) {
 		return 0, rdtError("invalid basemask %#x: more than one block of bits set", baseMask)
 	}
-	if uint64(bits.OnesCount64(uint64(baseMask))) < rdt.info.l3MinCbmBits() {
-		return 0, rdtError("invalid basemask %#x: fewer than %d bits set", baseMask, rdt.info.l3MinCbmBits())
+	if uint64(bits.OnesCount64(uint64(baseMask))) < info.l3MinCbmBits() {
+		return 0, rdtError("invalid basemask %#x: fewer than %d bits set", baseMask, info.l3MinCbmBits())
 	}
 
 	low, high := a.lowPct, a.highPct
@@ -280,8 +280,8 @@ func (a l3PctRangeAllocation) Overlay(baseMask Bitmask) (Bitmask, error) {
 
 	// Make sure the number of bits set satisfies the minimum requirement
 	numBits := msb - lsb + 1
-	if numBits < rdt.info.l3MinCbmBits() {
-		gap := rdt.info.l3MinCbmBits() - numBits
+	if numBits < info.l3MinCbmBits() {
+		gap := info.l3MinCbmBits() - numBits
 
 		// First, widen the mask from the "lsb end"
 		if gap <= lsb {
@@ -331,7 +331,7 @@ func (s mbSchema) ToStr(base map[uint64]uint64) string {
 	for _, id := range ids {
 		baseAllocation := base[id]
 		value := uint64(0)
-		if rdt.info.mb.mbpsEnabled {
+		if info.mb.mbpsEnabled {
 			value = math.MaxUint32
 			if s != nil {
 				value = s[id]
@@ -347,8 +347,8 @@ func (s mbSchema) ToStr(base map[uint64]uint64) string {
 			}
 			value = allocation * baseAllocation / 100
 			// Guarantee minimum bw so that writing out the schemata does not fail
-			if value < rdt.info.mb.minBandwidth {
-				value = rdt.info.mb.minBandwidth
+			if value < info.mb.minBandwidth {
+				value = info.mb.minBandwidth
 			}
 		}
 
@@ -424,7 +424,7 @@ func (raw Config) resolve() (config, error) {
 func (raw Config) resolvePartitions() (partitionSet, error) {
 	// Initialize empty partition configuration
 	conf := make(partitionSet, len(raw.Partitions))
-	numCacheIds := len(rdt.info.cacheIds)
+	numCacheIds := len(info.cacheIds)
 	for name := range raw.Partitions {
 		conf[name] = partitionConfig{L3: make(l3Schema, numCacheIds),
 			MB: make(mbSchema, numCacheIds)}
@@ -447,8 +447,8 @@ func (raw Config) resolvePartitions() (partitionSet, error) {
 
 // resolveL3Partitions tries to resolve requested L3 allocations between partitions
 func (raw Config) resolveL3Partitions(conf partitionSet) error {
-	allocationsPerCacheID := make(map[uint64][]l3PartitionAllocation, len(rdt.info.cacheIds))
-	for _, id := range rdt.info.cacheIds {
+	allocationsPerCacheID := make(map[uint64][]l3PartitionAllocation, len(info.cacheIds))
+	for _, id := range info.cacheIds {
 		allocationsPerCacheID[id] = make([]l3PartitionAllocation, 0, len(raw.Partitions))
 	}
 	// Helper structure for printing out human-readable info in the end
@@ -482,7 +482,7 @@ func (raw Config) resolveL3Partitions(conf partitionSet) error {
 	}
 
 	// Next, try to resolve partition allocations, separately for each cache-id
-	fullBitmaskNumBits := uint64(rdt.info.l3CbmMask().lsbZero())
+	fullBitmaskNumBits := uint64(info.l3CbmMask().lsbZero())
 	for id, partitions := range allocationsPerCacheID {
 		err := conf.resolveCacheID(id, partitions)
 		if err != nil {
@@ -586,8 +586,8 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 	})
 
 	bitID := uint64(0)
-	minCbmBits := rdt.info.l3MinCbmBits()
-	fullBitmaskNumBits := uint64(rdt.info.l3CbmMask().lsbZero())
+	minCbmBits := info.l3MinCbmBits()
+	fullBitmaskNumBits := uint64(info.l3CbmMask().lsbZero())
 	for i, partition := range partitions {
 		bitsAvailable := fullBitmaskNumBits - bitID
 		percentageAvailable := bitsAvailable * 100 / fullBitmaskNumBits
@@ -655,8 +655,8 @@ func (raw Config) resolveMBPartitions(conf partitionSet) error {
 		for id, allocation := range allocations {
 			conf[name].MB[id] = allocation
 			// Check that we don't go under the minimum allowed bandwidth setting
-			if !rdt.info.mb.mbpsEnabled && allocation < rdt.info.mb.minBandwidth {
-				conf[name].MB[id] = rdt.info.mb.minBandwidth
+			if !info.mb.mbpsEnabled && allocation < info.mb.minBandwidth {
+				conf[name].MB[id] = info.mb.minBandwidth
 			}
 		}
 	}
@@ -753,8 +753,8 @@ func (raw rawAllocations) rawParse(defaultVal interface{}, initEmpty bool) (map[
 		return nil, fmt.Errorf("'all' is missing")
 	}
 
-	allocations := make(map[uint64]interface{}, len(rdt.info.cacheIds))
-	for _, i := range rdt.info.cacheIds {
+	allocations := make(map[uint64]interface{}, len(info.cacheIds))
+	for _, i := range info.cacheIds {
 		allocations[i] = defaultVal
 	}
 
@@ -881,8 +881,8 @@ func parseCacheAllocation(data string) (cacheAllocation, error) {
 	if numOnes != 64-bits.LeadingZeros64(value)-bits.TrailingZeros64(value) {
 		return nil, fmt.Errorf("invalid cache bitmask %q: more than one continuous block of ones", data)
 	}
-	if uint64(numOnes) < rdt.info.l3MinCbmBits() {
-		return nil, fmt.Errorf("invalid cache bitmask %q: number of bits less than %d", data, rdt.info.l3MinCbmBits())
+	if uint64(numOnes) < info.l3MinCbmBits() {
+		return nil, fmt.Errorf("invalid cache bitmask %q: number of bits less than %d", data, info.l3MinCbmBits())
 	}
 
 	return l3AbsoluteAllocation(value), nil
@@ -896,7 +896,7 @@ func parseMBAllocation(raw []interface{}) (uint64, error) {
 			return 0, fmt.Errorf("not a string value %q", v)
 		}
 		if strings.HasSuffix(strVal, mbSuffixPct) {
-			if !rdt.info.mb.mbpsEnabled {
+			if !info.mb.mbpsEnabled {
 				value, err := strconv.ParseUint(strings.TrimSuffix(strVal, mbSuffixPct), 10, 7)
 				if err != nil {
 					return 0, err
@@ -904,7 +904,7 @@ func parseMBAllocation(raw []interface{}) (uint64, error) {
 				return value, nil
 			}
 		} else if strings.HasSuffix(strVal, mbSuffixMbps) {
-			if rdt.info.mb.mbpsEnabled {
+			if info.mb.mbpsEnabled {
 				value, err := strconv.ParseUint(strings.TrimSuffix(strVal, mbSuffixMbps), 10, 32)
 				if err != nil {
 					return 0, err
@@ -917,7 +917,7 @@ func parseMBAllocation(raw []interface{}) (uint64, error) {
 	}
 
 	// No value for the active mode was specified
-	if rdt.info.mb.mbpsEnabled {
+	if info.mb.mbpsEnabled {
 		return 0, fmt.Errorf("missing 'MBps' value from mbSchema; required because 'mba_MBps' is enabled in the system")
 	}
 	return 0, fmt.Errorf("missing '%%' value from mbSchema; required because percentage-based MBA allocation is enabled in the system")

@@ -43,11 +43,12 @@ type control struct {
 	resctrlGroupPrefix string
 	conf               config
 	rawConf            Config
-	info               info
 	classes            map[string]*ctrlGroup
 }
 
 var log Logger = NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt ] ", 0))
+
+var info *resctrlInfo
 
 var rdt *control = &control{
 	Logger: log,
@@ -149,7 +150,7 @@ func Initialize(resctrlGroupPrefix string, conf *Config) error {
 	rdt = &control{Logger: log, resctrlGroupPrefix: resctrlGroupPrefix}
 
 	// Get info from the resctrl filesystem
-	rdt.info, err = getRdtInfo()
+	info, err = getRdtInfo()
 	if err != nil {
 		return err
 	}
@@ -205,13 +206,13 @@ func (c *control) getClasses() []CtrlGroup {
 }
 
 func (c *control) monSupported() bool {
-	return c.info.l3mon.Supported()
+	return info.l3mon.Supported()
 }
 
 func (c *control) getMonFeatures() map[MonResource][]string {
 	ret := make(map[MonResource][]string)
-	if c.info.l3mon.Supported() {
-		ret[MonResourceL3] = append([]string{}, c.info.l3mon.monFeatures...)
+	if info.l3mon.Supported() {
+		ret[MonResourceL3] = append([]string{}, info.l3mon.monFeatures...)
 	}
 
 	return ret
@@ -289,7 +290,7 @@ func (c *control) configureResctrl(conf config) error {
 }
 
 func (c *control) classesFromResctrlFs() ([]ctrlGroup, error) {
-	r, err := resctrlGroupsFromFs(c.resctrlGroupPrefix, c.info.resctrlPath)
+	r, err := resctrlGroupsFromFs(c.resctrlGroupPrefix, info.resctrlPath)
 	if err != nil {
 		return nil, err
 	}
@@ -301,11 +302,11 @@ func (c *control) classesFromResctrlFs() ([]ctrlGroup, error) {
 }
 
 func (c *control) readRdtFile(rdtPath string) ([]byte, error) {
-	return ioutil.ReadFile(filepath.Join(c.info.resctrlPath, rdtPath))
+	return ioutil.ReadFile(filepath.Join(info.resctrlPath, rdtPath))
 }
 
 func (c *control) writeRdtFile(rdtPath string, data []byte) error {
-	if err := ioutil.WriteFile(filepath.Join(c.info.resctrlPath, rdtPath), data, 0644); err != nil {
+	if err := ioutil.WriteFile(filepath.Join(info.resctrlPath, rdtPath), data, 0644); err != nil {
 		return c.cmdError(err)
 	}
 	return nil
@@ -403,13 +404,13 @@ func (c *ctrlGroup) configure(name string, class classConfig,
 
 	// Handle L3 cache allocation
 	switch {
-	case rdt.info.l3.Supported():
+	case info.l3.Supported():
 		schema, err := class.L3Schema.ToStr(l3SchemaTypeUnified, partition.L3)
 		if err != nil {
 			return err
 		}
 		schemata += schema
-	case rdt.info.l3data.Supported() || rdt.info.l3code.Supported():
+	case info.l3data.Supported() || info.l3code.Supported():
 		schema, err := class.L3Schema.ToStr(l3SchemaTypeCode, partition.L3)
 		if err != nil {
 			return err
@@ -429,7 +430,7 @@ func (c *ctrlGroup) configure(name string, class classConfig,
 
 	// Handle memory bandwidth allocation
 	switch {
-	case rdt.info.mb.Supported():
+	case info.mb.Supported():
 		schemata += class.MBSchema.ToStr(partition.MB)
 	default:
 		if class.MBSchema != nil && !options.MB.Optional {
@@ -501,7 +502,7 @@ func (r *resctrlGroup) AddPids(pids ...string) error {
 func (r *resctrlGroup) GetMonData() MonData {
 	m := MonData{}
 
-	if rdt.info.l3mon.Supported() {
+	if info.l3mon.Supported() {
 		l3, err := r.getMonL3Data()
 		if err != nil {
 			log.Warn("failed to retrieve L3 monitoring data: %v", err)
@@ -581,7 +582,7 @@ func (r *resctrlGroup) relPath(elem ...string) string {
 }
 
 func (r *resctrlGroup) path(elem ...string) string {
-	return filepath.Join(rdt.info.resctrlPath, r.relPath(elem...))
+	return filepath.Join(info.resctrlPath, r.relPath(elem...))
 }
 
 func newMonGroup(prefix string, name string, parent *ctrlGroup, annotations map[string]string) (*monGroup, error) {

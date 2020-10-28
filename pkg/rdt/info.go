@@ -27,8 +27,8 @@ import (
 	"strings"
 )
 
-// Info contains information about the RDT support in the system
-type info struct {
+// resctrlInfo contains information about the RDT support in the system
+type resctrlInfo struct {
 	resctrlPath      string
 	resctrlMountOpts map[string]struct{}
 	numClosids       uint64
@@ -61,7 +61,7 @@ type mbInfo struct {
 var mountInfoPath string = "/proc/mounts"
 
 // l3Info is a helper method for a "unified API" for getting L3 information
-func (i info) l3Info() l3Info {
+func (i *resctrlInfo) l3Info() l3Info {
 	switch {
 	case i.l3code.Supported():
 		return i.l3code
@@ -71,7 +71,7 @@ func (i info) l3Info() l3Info {
 	return i.l3
 }
 
-func (i info) l3CbmMask() Bitmask {
+func (i *resctrlInfo) l3CbmMask() Bitmask {
 	mask := i.l3Info().cbmMask
 	if mask != 0 {
 		return mask
@@ -79,13 +79,13 @@ func (i info) l3CbmMask() Bitmask {
 	return Bitmask(^uint64(0))
 }
 
-func (i info) l3MinCbmBits() uint64 {
+func (i *resctrlInfo) l3MinCbmBits() uint64 {
 	return i.l3Info().minCbmBits
 }
 
-func getRdtInfo() (info, error) {
+func getRdtInfo() (*resctrlInfo, error) {
 	var err error
-	info := info{}
+	info := &resctrlInfo{}
 
 	info.resctrlPath, info.resctrlMountOpts, err = getResctrlMountInfo()
 	if err != nil {
