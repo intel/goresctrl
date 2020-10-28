@@ -154,15 +154,21 @@ func TestRdt(t *testing.T) {
 	l := NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt-test ] ", 0))
 	SetLogger(l)
 
-	rdt = &control{Logger: log}
+	if err := SetConfig(&Config{}); err == nil {
+		t.Errorf("setting config on uninitialized rdt succeeded unexpectedly")
 
-	classes := GetClasses()
-	if len(classes) != 0 {
+	}
+	if classes := GetClasses(); len(classes) != 0 {
 		t.Errorf("uninitialized rdt contains classes %s", classes)
 	}
-
 	if _, ok := GetClass(""); ok {
 		t.Errorf("expected to not get a class with empty name")
+	}
+	if MonSupported() {
+		t.Errorf("unitialized rdt claims monitoring to be supported")
+	}
+	if features := GetMonFeatures(); len(features) != 0 {
+		t.Errorf("uninitialized rdt returned monitoring features %s", features)
 	}
 
 	//
@@ -206,7 +212,7 @@ func TestRdt(t *testing.T) {
 	}
 
 	// Verify GetClasses
-	classes = GetClasses()
+	classes := GetClasses()
 	names := make([]string, len(classes))
 	for i, cls := range classes {
 		names[i] = cls.Name()

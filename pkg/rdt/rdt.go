@@ -50,9 +50,7 @@ var log Logger = NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt ] ", 0))
 
 var info *resctrlInfo
 
-var rdt *control = &control{
-	Logger: log,
-}
+var rdt *control
 
 // CtrlGroup defines the interface of one goresctrl managed RDT class
 type CtrlGroup interface {
@@ -166,27 +164,42 @@ func Initialize(resctrlGroupPrefix string, conf *Config) error {
 // SetConfig parses new configuration and reconfigures the resctrl filesystem
 // accordingly
 func SetConfig(c *Config) error {
-	return rdt.setConfig(c)
+	if rdt != nil {
+		return rdt.setConfig(c)
+	}
+	return rdtError("rdt not initialized")
 }
 
 // GetClass returns one RDT class
 func GetClass(name string) (CtrlGroup, bool) {
-	return rdt.getClass(name)
+	if rdt != nil {
+		return rdt.getClass(name)
+	}
+	return nil, false
 }
 
 // GetClasses returns all available RDT classes
 func GetClasses() []CtrlGroup {
-	return rdt.getClasses()
+	if rdt != nil {
+		return rdt.getClasses()
+	}
+	return []CtrlGroup{}
 }
 
 // MonSupported returns true if RDT monitoring features are available
 func MonSupported() bool {
-	return rdt.monSupported()
+	if rdt != nil {
+		return rdt.monSupported()
+	}
+	return false
 }
 
 // GetMonFeatures returns the available monitoring stats of each available monitoring technology
 func GetMonFeatures() map[MonResource][]string {
-	return rdt.getMonFeatures()
+	if rdt != nil {
+		return rdt.getMonFeatures()
+	}
+	return map[MonResource][]string{}
 }
 
 func (c *control) getClass(name string) (CtrlGroup, bool) {
