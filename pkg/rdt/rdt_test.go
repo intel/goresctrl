@@ -304,9 +304,7 @@ func TestRdt(t *testing.T) {
 		t.Errorf("unexpected error when querying mon group: %v", err)
 	}
 
-	if mgs := cls.GetMonGroups(); len(mgs) != 1 {
-		t.Errorf("unexpected monitoring groups: %v", mgs)
-	}
+	verifyGroupNames(cls.GetMonGroups(), []string{"predefined_group_live", mgName})
 
 	mgPath := rdt.classes["Guaranteed"].path("mon_groups", "goresctrl."+mgName)
 	if _, err := os.Stat(mgPath); err != nil {

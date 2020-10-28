@@ -166,6 +166,10 @@ func Initialize(resctrlGroupPrefix string) error {
 		return rdtError("failed to initialize classes from resctrl fs", err)
 	}
 
+	if err := r.pruneMonGroups(); err != nil {
+		return err
+	}
+
 	rdt = r
 
 	return nil
@@ -270,12 +274,12 @@ func (c *control) configureResctrl(conf config) error {
 	c.DebugBlock("", "applying resolved config: |\n%s", utils.DumpJSON(conf))
 
 	// Remove stale resctrl groups
-	existingClasses, err := c.classesFromResctrlFs()
+	classesFromFs, err := c.classesFromResctrlFs()
 	if err != nil {
 		return err
 	}
 
-	for _, cls := range existingClasses {
+	for name, cls := range classesFromFs {
 		if _, ok := conf.Classes[cls.name]; cls.name != RootClassName && !ok {
 			tasks, err := cls.GetPids()
 			if err != nil {
@@ -284,58 +288,77 @@ func (c *control) configureResctrl(conf config) error {
 			if len(tasks) > 0 {
 				return rdtError("refusing to remove non-empty resctrl group %q", cls.relPath(""))
 			}
+			log.Debug("removing existing resctrl group %q", cls.relPath(""))
 			err = groupRemoveFunc(cls.path(""))
 			if err != nil {
 				return rdtError("failed to remove resctrl group %q: %v", cls.relPath(""), err)
 			}
+
+			delete(c.classes, name)
 		}
 	}
 
-	// Start with fresh set of classes. Root class is always present
-	c.classes = make(map[string]*ctrlGroup, len(conf.Classes))
-	c.classes[RootClassName], err = newCtrlGroup(c.resctrlGroupPrefix, RootClassName)
-	if err != nil {
-		return err
+	for name, cls := range c.classes {
+		if _, ok := conf.Classes[cls.name]; cls.name != RootClassName && !ok {
+			log.Debug("dropping stale class %q", name)
+			delete(c.classes, name)
+		}
+	}
+
+	if _, ok := c.classes[RootClassName]; !ok {
+		log.Warn("root class missing from runtime data, re-adding...")
+		c.classes[RootClassName] = classesFromFs[RootClassName]
 	}
 
 	// Try to apply given configuration
 	for name, class := range conf.Classes {
-		cg, err := newCtrlGroup(c.resctrlGroupPrefix, name)
-		if err != nil {
-			return err
+		if _, ok := c.classes[name]; !ok {
+			cg, err := newCtrlGroup(c.resctrlGroupPrefix, name)
+			if err != nil {
+				return err
+			}
+			c.classes[name] = cg
 		}
-
 		partition := conf.Partitions[class.Partition]
-		if err := cg.configure(name, class, partition, conf.Options); err != nil {
+		if err := c.classes[name].configure(name, class, partition, conf.Options); err != nil {
 			return err
 		}
+	}
 
-		c.classes[name] = cg
+	if err := c.pruneMonGroups(); err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func (c *control) classesFromResctrlFs() (map[string]*ctrlGroup, error) {
-	r, err := resctrlGroupsFromFs(c.resctrlGroupPrefix, info.resctrlPath)
-	if err != nil {
+	names := []string{RootClassName}
+	if n, err := resctrlGroupsFromFs(c.resctrlGroupPrefix, info.resctrlPath); err != nil {
 		return nil, err
+	} else {
+		names = append(names, n...)
 	}
-	classes := make(map[string]*ctrlGroup, len(r)+1)
-	classes[RootClassName], err = newCtrlGroup(c.resctrlGroupPrefix, RootClassName)
 
-	for _, grp := range r {
-		g := &ctrlGroup{
-			resctrlGroup: grp,
-			monGroups:    make(map[string]*monGroup),
+	classes := make(map[string]*ctrlGroup, len(names)+1)
+	for _, name := range names {
+		g, err := newCtrlGroup(c.resctrlGroupPrefix, name)
+		if err != nil {
+			return nil, err
 		}
-		if g.monGroups, err = g.monGroupsFromResctrlFs(); err != nil {
-			return nil, fmt.Errorf("error reading monitoring groups of %q: %v", g.name, err)
-		}
-
-		classes[grp.name] = g
+		classes[name] = g
 	}
+
 	return classes, nil
+}
+
+func (c *control) pruneMonGroups() error {
+	for name, cls := range c.classes {
+		if err := cls.pruneMonGroups(); err != nil {
+			return rdtError("failed to prune stale monitoring groups of %q: %v", name, err)
+		}
+	}
+	return nil
 }
 
 func (c *control) readRdtFile(rdtPath string) ([]byte, error) {
@@ -364,23 +387,16 @@ func (c *control) cmdError(origErr error) error {
 func newCtrlGroup(prefix string, name string) (*ctrlGroup, error) {
 	cg := &ctrlGroup{
 		resctrlGroup: resctrlGroup{prefix: prefix, name: name},
-		monGroups:    make(map[string]*monGroup),
 	}
 
 	if err := os.Mkdir(cg.path(""), 0755); err != nil && !os.IsExist(err) {
 		return nil, err
 	}
 
-	// Reomve existing goresctrl specific monitor groups
-	// TODO: consider if these should be preserved and handled more intelligently
-	mgs, err := cg.monGroupsFromResctrlFs()
+	var err error
+	cg.monGroups, err = cg.monGroupsFromResctrlFs()
 	if err != nil {
 		return nil, fmt.Errorf("error when retrieving existing monitor groups: %v", err)
-	}
-	for _, mg := range mgs {
-		if err := groupRemoveFunc(mg.path("")); err != nil {
-			return nil, rdtError("failed to remove existing monitoring group %q: %v", mg.relPath(""), err)
-		}
 	}
 
 	return cg, nil
@@ -488,22 +504,36 @@ func (c *ctrlGroup) configure(name string, class classConfig,
 }
 
 func (c *ctrlGroup) monGroupsFromResctrlFs() (map[string]*monGroup, error) {
-	r, err := resctrlGroupsFromFs(c.prefix, c.path("mon_groups"))
+	names, err := resctrlGroupsFromFs(c.prefix, c.path("mon_groups"))
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 
-	grps := make(map[string]*monGroup, len(r))
-	for _, grp := range r {
-		grp.parent = c
-		grps[grp.name] = &monGroup{
-			resctrlGroup: grp,
-			// NOTE: we have no way of preserving monitoring group annotations
-			// in the fs so they will be left empty
-			annotations: make(map[string]string),
+	grps := make(map[string]*monGroup, len(names))
+	for _, name := range names {
+		mg, err := newMonGroup(c.prefix, name, c, nil)
+		if err != nil {
+			return nil, err
 		}
+		grps[name] = mg
 	}
 	return grps, nil
+}
+
+// Remove empty monitoring groups
+func (c *ctrlGroup) pruneMonGroups() error {
+	for name, mg := range c.monGroups {
+		pids, err := mg.GetPids()
+		if err != nil {
+			return fmt.Errorf("failed to get pids for monitoring group %q: %v", mg.relPath(""), err)
+		}
+		if len(pids) == 0 {
+			if err := c.DeleteMonGroup(name); err != nil {
+				return fmt.Errorf("failed to remove monitoring group %q: %v", mg.relPath(""), err)
+			}
+		}
+	}
+	return nil
 }
 
 func (r *resctrlGroup) Name() string {
@@ -654,21 +684,17 @@ func (m *monGroup) GetAnnotations() map[string]string {
 	return a
 }
 
-func resctrlGroupsFromFs(prefix string, path string) ([]resctrlGroup, error) {
+func resctrlGroupsFromFs(prefix string, path string) ([]string, error) {
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
 		return nil, err
 	}
 
-	grps := make([]resctrlGroup, 0, len(files))
+	grps := make([]string, 0, len(files))
 	for _, file := range files {
 		filename := file.Name()
 		if strings.HasPrefix(filename, prefix) {
-			grps = append(grps,
-				resctrlGroup{
-					prefix: prefix,
-					name:   filename[len(prefix):],
-				})
+			grps = append(grps, filename[len(prefix):])
 		}
 	}
 	return grps, nil
