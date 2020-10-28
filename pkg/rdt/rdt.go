@@ -139,7 +139,7 @@ func SetLogger(l Logger) {
 }
 
 // Initialize discovers RDT support and initializes the  rdtControl singleton interface
-func Initialize(resctrlGroupPrefix string, conf *Config) error {
+func Initialize(resctrlGroupPrefix string) error {
 	var err error
 
 	info = nil
@@ -151,14 +151,7 @@ func Initialize(resctrlGroupPrefix string, conf *Config) error {
 		return err
 	}
 
-	r := &control{Logger: log, resctrlGroupPrefix: resctrlGroupPrefix}
-
-	// Configure resctrl
-	if err = r.setConfig(conf); err != nil {
-		return rdtError("configuration failed: %v", err)
-	}
-
-	rdt = r
+	rdt = &control{Logger: log, resctrlGroupPrefix: resctrlGroupPrefix}
 
 	return nil
 }

@@ -181,8 +181,11 @@ func TestRdt(t *testing.T) {
 	defer mockFs.delete()
 
 	conf := parseTestConfig(t, rdtTestConfig)
-	if err := Initialize(mockGroupPrefix, conf); err != nil {
+	if err := Initialize(mockGroupPrefix); err != nil {
 		t.Fatalf("rdt initialization failed: %v", err)
+	}
+	if err := SetConfig(conf); err != nil {
+		t.Fatalf("rdt configuration failed: %v", err)
 	}
 
 	// Check that the path() and relPath() methods work correctly
