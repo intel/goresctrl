@@ -148,6 +148,33 @@ partitions:
 
 // TestRdt tests the rdt public API, i.e. exported functionality of the package
 func TestRdt(t *testing.T) {
+	verifyGroupNames := func(a interface{}, b []string) {
+		var names []string
+
+		switch v := a.(type) {
+		case []CtrlGroup:
+			for _, g := range v {
+				names = append(names, g.Name())
+			}
+		case []MonGroup:
+			for _, g := range v {
+				names = append(names, g.Name())
+			}
+		default:
+			t.Errorf("Invalid type '%T' in verifyGroupNames()", a)
+			return
+		}
+		if len(b) == 0 && len(names) == 0 {
+			return
+		}
+		if !cmp.Equal(names, b) {
+			t.Errorf("unexpected class/group names: expected %s got %s", b, names)
+		}
+	}
+
+	// Set group remove function so that mock groups can be removed
+	groupRemoveFunc = os.RemoveAll
+
 	//
 	// 1. test uninitialized interface
 	//
@@ -183,6 +210,17 @@ func TestRdt(t *testing.T) {
 	if err := Initialize(mockGroupPrefix); err != nil {
 		t.Fatalf("rdt initialization failed: %v", err)
 	}
+
+	// Check that existing groups were read correctly on init
+	classes := GetClasses()
+	verifyGroupNames(classes, []string{"Guaranteed", "SYSTEM_DEFAULT", "Stale"})
+
+	cls, _ := GetClass("SYSTEM_DEFAULT")
+	verifyGroupNames(cls.GetMonGroups(), []string{})
+	cls, _ = GetClass("Guaranteed")
+	verifyGroupNames(cls.GetMonGroups(), []string{"predefined_group_live"})
+
+	// Check that confiouration succeeds
 	if err := SetConfig(conf); err != nil {
 		t.Fatalf("rdt configuration failed: %v", err)
 	}
@@ -220,17 +258,11 @@ func TestRdt(t *testing.T) {
 	}
 
 	// Verify GetClasses
-	classes := GetClasses()
-	names := make([]string, len(classes))
-	for i, cls := range classes {
-		names[i] = cls.Name()
-	}
-	if !cmp.Equal(names, []string{"BestEffort", "Burstable", "Guaranteed", "SYSTEM_DEFAULT"}) {
-		t.Errorf("GetClasses() returned unexpected classes %s", names)
-	}
+	classes = GetClasses()
+	verifyGroupNames(classes, []string{"BestEffort", "Burstable", "Guaranteed", "SYSTEM_DEFAULT"})
 
 	// Verify assigning pids to classes (ctrl groups)
-	cls, _ := GetClass("Guaranteed")
+	cls, _ = GetClass("Guaranteed")
 	if n := cls.Name(); n != "Guaranteed" {
 		t.Errorf("CtrlGroup.Name() returned %q, expected %q", n, "Guaranteed")
 	}

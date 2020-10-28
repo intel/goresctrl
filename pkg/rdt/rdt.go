@@ -52,6 +52,10 @@ var info *resctrlInfo
 
 var rdt *control
 
+// Function for removing resctrl groups from the filesystem. This is
+// configurable because of unit tests.
+var groupRemoveFunc func(string) error = os.Remove
+
 // CtrlGroup defines the interface of one goresctrl managed RDT class
 type CtrlGroup interface {
 	ResctrlGroup
@@ -154,7 +158,15 @@ func Initialize(resctrlGroupPrefix string) error {
 		return err
 	}
 
-	rdt = &control{Logger: log, resctrlGroupPrefix: resctrlGroupPrefix}
+	r := &control{Logger: log, resctrlGroupPrefix: resctrlGroupPrefix}
+
+	// NOTE: we lose monitoring group annotations (i.e. prometheus metrics
+	// labels) on re-init
+	if r.classes, err = r.classesFromResctrlFs(); err != nil {
+		return rdtError("failed to initialize classes from resctrl fs", err)
+	}
+
+	rdt = r
 
 	return nil
 }
@@ -264,7 +276,7 @@ func (c *control) configureResctrl(conf config) error {
 	}
 
 	for _, cls := range existingClasses {
-		if _, ok := conf.Classes[cls.name]; !ok {
+		if _, ok := conf.Classes[cls.name]; cls.name != RootClassName && !ok {
 			tasks, err := cls.GetPids()
 			if err != nil {
 				return rdtError("failed to get resctrl group tasks: %v", err)
@@ -272,7 +284,7 @@ func (c *control) configureResctrl(conf config) error {
 			if len(tasks) > 0 {
 				return rdtError("refusing to remove non-empty resctrl group %q", cls.relPath(""))
 			}
-			err = os.Remove(cls.path(""))
+			err = groupRemoveFunc(cls.path(""))
 			if err != nil {
 				return rdtError("failed to remove resctrl group %q: %v", cls.relPath(""), err)
 			}
@@ -304,14 +316,24 @@ func (c *control) configureResctrl(conf config) error {
 	return nil
 }
 
-func (c *control) classesFromResctrlFs() ([]ctrlGroup, error) {
+func (c *control) classesFromResctrlFs() (map[string]*ctrlGroup, error) {
 	r, err := resctrlGroupsFromFs(c.resctrlGroupPrefix, info.resctrlPath)
 	if err != nil {
 		return nil, err
 	}
-	classes := make([]ctrlGroup, len(r))
-	for i, grp := range r {
-		classes[i] = ctrlGroup{resctrlGroup: grp}
+	classes := make(map[string]*ctrlGroup, len(r)+1)
+	classes[RootClassName], err = newCtrlGroup(c.resctrlGroupPrefix, RootClassName)
+
+	for _, grp := range r {
+		g := &ctrlGroup{
+			resctrlGroup: grp,
+			monGroups:    make(map[string]*monGroup),
+		}
+		if g.monGroups, err = g.monGroupsFromResctrlFs(); err != nil {
+			return nil, fmt.Errorf("error reading monitoring groups of %q: %v", g.name, err)
+		}
+
+		classes[grp.name] = g
 	}
 	return classes, nil
 }
@@ -356,7 +378,7 @@ func newCtrlGroup(prefix string, name string) (*ctrlGroup, error) {
 		return nil, fmt.Errorf("error when retrieving existing monitor groups: %v", err)
 	}
 	for _, mg := range mgs {
-		if err := os.Remove(mg.path("")); err != nil {
+		if err := groupRemoveFunc(mg.path("")); err != nil {
 			return nil, rdtError("failed to remove existing monitoring group %q: %v", mg.relPath(""), err)
 		}
 	}
@@ -388,7 +410,7 @@ func (c *ctrlGroup) DeleteMonGroup(name string) error {
 	}
 
 	log.Debug("deleting monitoring group %s/%s", c.name, name)
-	if err := os.Remove(mg.path("")); err != nil {
+	if err := groupRemoveFunc(mg.path("")); err != nil {
 		return rdtError("failed to remove monitoring group %q: %v", mg.relPath(""), err)
 	}
 
@@ -465,16 +487,21 @@ func (c *ctrlGroup) configure(name string, class classConfig,
 	return nil
 }
 
-func (c *ctrlGroup) monGroupsFromResctrlFs() ([]*monGroup, error) {
+func (c *ctrlGroup) monGroupsFromResctrlFs() (map[string]*monGroup, error) {
 	r, err := resctrlGroupsFromFs(c.prefix, c.path("mon_groups"))
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 
-	grps := make([]*monGroup, len(r))
-	for i, grp := range r {
+	grps := make(map[string]*monGroup, len(r))
+	for _, grp := range r {
 		grp.parent = c
-		grps[i] = &monGroup{resctrlGroup: grp}
+		grps[grp.name] = &monGroup{
+			resctrlGroup: grp,
+			// NOTE: we have no way of preserving monitoring group annotations
+			// in the fs so they will be left empty
+			annotations: make(map[string]string),
+		}
 	}
 	return grps, nil
 }
