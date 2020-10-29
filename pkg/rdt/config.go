@@ -31,18 +31,14 @@ import (
 type Config struct {
 	Options    schemaOptions `json:"options"`
 	Partitions map[string]struct {
-		L3Allocation rawAllocations `json:"l3Allocation"`
-		MBAllocation rawAllocations `json:"mbAllocation"`
+		L3Allocation interface{} `json:"l3Allocation"`
+		MBAllocation interface{} `json:"mbAllocation"`
 		Classes      map[string]struct {
-			L3Schema rawAllocations `json:"l3Schema"`
-			MBSchema rawAllocations `json:"mbSchema"`
+			L3Schema interface{} `json:"l3Schema"`
+			MBSchema interface{} `json:"mbSchema"`
 		} `json:"classes"`
 	} `json:"partitions"`
 }
-
-// rawAllocations is an intermediate helper type for JSON parsing of
-// per-cache-id allocations
-type rawAllocations map[string]interface{}
 
 // config represents the final (parsed and resolved) runtime configuration of
 // RDT Control
@@ -458,7 +454,7 @@ func (raw Config) resolveL3Partitions(conf partitionSet) error {
 	// per-cache-id structure
 	numNils := 0
 	for name, partition := range raw.Partitions {
-		allocations, err := partition.L3Allocation.parseL3()
+		allocations, err := parseRawL3Allocations(partition.L3Allocation)
 		if err != nil {
 			return fmt.Errorf("failed to parse L3 allocation request for partition %q: %v", name, err)
 		}
@@ -648,7 +644,7 @@ func (s partitionSet) resolveCacheIDAbsolute(id uint64, partitions []l3Partition
 func (raw Config) resolveMBPartitions(conf partitionSet) error {
 	// We use percentage values directly from the raw conf
 	for name, partition := range raw.Partitions {
-		allocations, err := partition.MBAllocation.parseMB()
+		allocations, err := parseRawMBAllocations(partition.MBAllocation)
 		if err != nil {
 			return fmt.Errorf("failed to resolve MB allocation for partition %q: %v", name, err)
 		}
@@ -677,7 +673,7 @@ func (raw Config) resolveClasses() (classSet, error) {
 			var err error
 			gc := classConfig{Partition: bname}
 
-			gc.L3Schema, err = class.L3Schema.parseL3()
+			gc.L3Schema, err = parseRawL3Allocations(class.L3Schema)
 			if err != nil {
 				return classes, fmt.Errorf("failed to resolve L3 allocation for class %q: %v", gname, err)
 			}
@@ -685,7 +681,7 @@ func (raw Config) resolveClasses() (classSet, error) {
 				return classes, fmt.Errorf("L3 allocation missing from partition %q but class %q specifies L3 schema", bname, gname)
 			}
 
-			gc.MBSchema, err = class.MBSchema.parseMB()
+			gc.MBSchema, err = parseRawMBAllocations(class.MBSchema)
 			if err != nil {
 				return classes, fmt.Errorf("failed to resolve MB allocation for class %q: %v", gname, err)
 			}
@@ -700,9 +696,9 @@ func (raw Config) resolveClasses() (classSet, error) {
 	return classes, nil
 }
 
-// parse parses a raw L3 cache allocation
-func (raw rawAllocations) parseL3() (l3Schema, error) {
-	rawValues, err := raw.rawParse("100%", false)
+// parseRawL3Allocations parses a raw L3 cache allocation
+func parseRawL3Allocations(raw interface{}) (l3Schema, error) {
+	rawValues, err := preparseRawAllocations(raw, "100%", false)
 	if err != nil || rawValues == nil {
 		return nil, err
 	}
@@ -718,9 +714,9 @@ func (raw rawAllocations) parseL3() (l3Schema, error) {
 	return allocations, nil
 }
 
-// parseMB parses a raw MB allocation
-func (raw rawAllocations) parseMB() (mbSchema, error) {
-	rawValues, err := raw.rawParse(map[string]interface{}{}, false)
+// parseRawMBAllocations parses a raw MB allocation
+func parseRawMBAllocations(raw interface{}) (mbSchema, error) {
+	rawValues, err := preparseRawAllocations(raw, []interface{}{}, false)
 	if err != nil || rawValues == nil {
 		return nil, err
 	}
@@ -729,7 +725,7 @@ func (raw rawAllocations) parseMB() (mbSchema, error) {
 	for id, rawVal := range rawValues {
 		strList, ok := rawVal.([]interface{})
 		if !ok {
-			return nil, fmt.Errorf("not a string value %q", rawVal)
+			return nil, fmt.Errorf("not a list value %q", rawVal)
 		}
 		allocations[id], err = parseMBAllocation(strList)
 		if err != nil {
@@ -740,28 +736,38 @@ func (raw rawAllocations) parseMB() (mbSchema, error) {
 	return allocations, nil
 }
 
-// rawParse "pre-parses" the rawAllocations per each cache id. I.e. it assigns
+// preparseRawAllocations "pre-parses" the rawAllocations per each cache id. I.e. it assigns
 // a raw (string) allocation for each cache id
-func (raw rawAllocations) rawParse(defaultVal interface{}, initEmpty bool) (map[uint64]interface{}, error) {
+func preparseRawAllocations(raw interface{}, defaultVal interface{}, initEmpty bool) (map[uint64]interface{}, error) {
 	if raw == nil && !initEmpty {
 		return nil, nil
 	}
 
-	if all, ok := raw["all"]; ok {
-		defaultVal = all
-	} else if defaultVal == nil {
-		return nil, fmt.Errorf("'all' is missing")
+	var rawPerCacheId map[string]interface{}
+	allocations := make(map[uint64]interface{}, len(info.cacheIds))
+
+	switch value := raw.(type) {
+	case string:
+		defaultVal = value
+	case []interface{}:
+		defaultVal = value
+	case map[string]interface{}:
+		if all, ok := value["all"]; ok {
+			defaultVal = all
+		} else if defaultVal == nil {
+			return nil, fmt.Errorf("'all' is missing")
+		}
+		delete(value, "all")
+		rawPerCacheId = value
+	default:
+		return allocations, fmt.Errorf("invalid structure of allocation schema '%v' (%T)", raw, raw)
 	}
 
-	allocations := make(map[uint64]interface{}, len(info.cacheIds))
 	for _, i := range info.cacheIds {
 		allocations[i] = defaultVal
 	}
 
-	for key, val := range raw {
-		if key == "all" {
-			continue
-		}
+	for key, val := range rawPerCacheId {
 		ids, err := listStrToArray(key)
 		if err != nil {
 			return nil, err
