@@ -904,7 +904,8 @@ func parseMBAllocation(raw []interface{}) (uint64, error) {
 	for _, v := range raw {
 		strVal, ok := v.(string)
 		if !ok {
-			return 0, fmt.Errorf("not a string value %q", v)
+			log.Warn("ignoring non-string (%T) MBA allocation %v", v, v)
+			continue
 		}
 		if strings.HasSuffix(strVal, mbSuffixPct) {
 			if !info.mb.mbpsEnabled {
@@ -923,7 +924,7 @@ func parseMBAllocation(raw []interface{}) (uint64, error) {
 				return value, nil
 			}
 		} else {
-			log.Warn("unrecognized MBA allocation format in %q", strVal)
+			log.Warn("unrecognized MBA allocation unit in %q", strVal)
 		}
 	}
 
