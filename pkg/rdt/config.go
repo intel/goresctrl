@@ -450,11 +450,18 @@ func (raw Config) resolveL3Partitions(conf partitionSet) error {
 	// Helper structure for printing out human-readable info in the end
 	requests := map[string]map[uint64]l3Allocation{}
 
+	// Resolve partitions in sorted order for reproducibility
+	names := make([]string, 0, len(raw.Partitions))
+	for name := range raw.Partitions {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
 	// Parse requested allocations from raw config and transfer them to our
 	// per-cache-id structure
 	numNils := 0
-	for name, partition := range raw.Partitions {
-		allocations, err := parseRawL3Allocations(partition.L3Allocation)
+	for _, name := range names {
+		allocations, err := parseRawL3Allocations(raw.Partitions[name].L3Allocation)
 		if err != nil {
 			return fmt.Errorf("failed to parse L3 allocation request for partition %q: %v", name, err)
 		}
@@ -479,8 +486,8 @@ func (raw Config) resolveL3Partitions(conf partitionSet) error {
 
 	// Next, try to resolve partition allocations, separately for each cache-id
 	fullBitmaskNumBits := uint64(info.l3CbmMask().lsbZero())
-	for id, partitions := range allocationsPerCacheID {
-		err := conf.resolveCacheID(id, partitions)
+	for id := range info.cacheIds {
+		err := conf.resolveCacheID(uint64(id), allocationsPerCacheID[uint64(id)])
 		if err != nil {
 			return err
 		}
