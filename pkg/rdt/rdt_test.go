@@ -43,7 +43,7 @@ type mockResctrlFs struct {
 
 func newMockResctrlFs(t *testing.T, name, mountOpts string) (*mockResctrlFs, error) {
 	var err error
-	m := &mockResctrlFs{}
+	m := &mockResctrlFs{t: t}
 
 	m.origDir = testdata.Path(name)
 	m.baseDir, err = ioutil.TempDir("", "goresctrl.test.")
@@ -65,8 +65,10 @@ func newMockResctrlFs(t *testing.T, name, mountOpts string) (*mockResctrlFs, err
 	return m, nil
 }
 
-func (m *mockResctrlFs) delete() error {
-	return os.RemoveAll(m.baseDir)
+func (m *mockResctrlFs) delete() {
+	if err := os.RemoveAll(m.baseDir); err != nil {
+		m.t.Fatalf("failed to delete mock resctrl fs: %v", err)
+	}
 }
 
 func (m *mockResctrlFs) initMockMonGroup(class, name string) {
