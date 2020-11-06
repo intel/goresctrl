@@ -563,14 +563,22 @@ func (s partitionSet) resolveCacheIDPerType(id uint64, partitions []l3PartitionA
 }
 
 func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3PartitionAllocation, typ l3SchemaType) error {
+	type reqHelper struct {
+		name string
+		req  uint64
+	}
+
 	// Sanity check:
 	// 1. allocation requests are of the same type (relative)
 	// 2. total allocation requested for this cache id does not exceed 100 percent
+	// Additionally fill a helper structure for sorting partitions
 	total := uint64(0)
+	reqs := make([]reqHelper, 0, len(partitions))
 	for _, partition := range partitions {
 		switch a := partition.allocation.get(typ).(type) {
 		case l3PctAllocation:
 			total += uint64(a)
+			reqs = append(reqs, reqHelper{name: partition.name, req: uint64(a)})
 		case l3AbsoluteAllocation:
 			return fmt.Errorf("error resolving L3 allocation for cache id %d: mixing relative and absolute allocations between partitions not supported", id)
 		case l3PctRangeAllocation:
@@ -588,17 +596,17 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 	// Sort partition allocations. We want to resolve smallest allocations
 	// first in order to try to ensure that all allocations can be satisfied
 	// because small percentages might need to be rounded up
-	sort.Slice(partitions, func(i, j int) bool {
-		return partitions[i].allocation.get(typ).(l3PctAllocation) <
-			partitions[j].allocation.get(typ).(l3PctAllocation)
+	sort.Slice(reqs, func(i, j int) bool {
+		return reqs[i].req < reqs[j].req
 	})
 
-	bitID := uint64(0)
+	// Calculate number of bits granted each partition.
+	grants := make(map[string]uint64, len(partitions))
 	minCbmBits := info.l3MinCbmBits()
-	fullBitmaskNumBits := uint64(info.l3CbmMask().lsbZero())
-	for i, partition := range partitions {
-		bitsAvailable := fullBitmaskNumBits - bitID
-		percentageAvailable := bitsAvailable * 100 / fullBitmaskNumBits
+	bitsTotal := uint64(info.l3CbmMask().lsbZero())
+	bitsAvailable := bitsTotal
+	for i, req := range reqs {
+		percentageAvailable := bitsAvailable * 100 / bitsTotal
 
 		// This might happen e.g. if number of partitions would be greater
 		// than the total number of bits
@@ -606,11 +614,9 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 			return fmt.Errorf("unable to resolve L3 allocation for cache id %d, not enough exlusive bits available", id)
 		}
 
-		// Calculate number of bits allocated for this partition.
 		// Use integer arithmetics, effectively always rounding down
 		// fractional allocations i.e. trying to avoid over-allocation
-		allocation := uint64(partition.allocation.get(typ).(l3PctAllocation))
-		numBits := allocation * bitsAvailable / percentageAvailable
+		numBits := req.req * bitsAvailable / percentageAvailable
 
 		// Guarantee a non-zero allocation
 		if numBits < minCbmBits {
@@ -621,11 +627,18 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 			numBits = bitsAvailable
 		}
 
+		grants[req.name] = numBits
+		bitsAvailable -= numBits
+	}
+
+	// Construct the actual bitmasks for each partition
+	lsbID := uint64(0)
+	for _, partition := range partitions {
 		// Compose the actual bitmask
-		v := s[partition.name].L3[id].set(typ, l3AbsoluteAllocation(Bitmask(((1<<numBits)-1)<<bitID)))
+		v := s[partition.name].L3[id].set(typ, l3AbsoluteAllocation(Bitmask(((1<<grants[partition.name])-1)<<lsbID)))
 		s[partition.name].L3[id] = v
 
-		bitID += numBits
+		lsbID += grants[partition.name]
 	}
 
 	return nil
