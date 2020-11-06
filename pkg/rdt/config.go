@@ -284,16 +284,15 @@ func (a l3PctRangeAllocation) Overlay(baseMask Bitmask) (Bitmask, error) {
 		gap := rdt.info.l3MinCbmBits() - numBits
 
 		// First, widen the mask from the "lsb end"
-		lsbAvailable := lsb - baseMaskLsb
-		if gap <= lsbAvailable {
+		if gap <= lsb {
 			lsb -= gap
+			gap = 0
 		} else {
-			lsb = baseMaskLsb
+			gap -= lsb
+			lsb = 0
 		}
 		// If needed, widen the mask from the "msb end"
-		numBits = msb - lsb + 1
-		gap = rdt.info.l3MinCbmBits() - numBits
-		msbAvailable := baseMaskMsb - msb
+		msbAvailable := baseMaskNumBits - msb - 1
 		if gap <= msbAvailable {
 			msb += gap
 		} else {
