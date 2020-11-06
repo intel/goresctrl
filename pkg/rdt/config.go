@@ -700,28 +700,6 @@ func (raw Config) resolveClasses() (classSet, error) {
 	return classes, nil
 }
 
-// parsePercentage parses a percentage value
-func (raw rawAllocations) parsePercentage() (map[uint64]uint64, error) {
-	rawValues, err := raw.rawParse("100%", true)
-	if err != nil || rawValues == nil {
-		return nil, err
-	}
-
-	allocations := make(map[uint64]uint64, len(rawValues))
-	for id, rawVal := range rawValues {
-		s, ok := rawVal.(string)
-		if !ok {
-			return nil, fmt.Errorf("not a string value %q", rawVal)
-		}
-		allocations[id], err = parsePercentage(s)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return allocations, nil
-}
-
 // parse parses a raw L3 cache allocation
 func (raw rawAllocations) parseL3() (l3Schema, error) {
 	rawValues, err := raw.rawParse("100%", false)
@@ -796,21 +774,6 @@ func (raw rawAllocations) rawParse(defaultVal interface{}, initEmpty bool) (map[
 	}
 
 	return allocations, nil
-}
-
-// parsePercentage parses a percentage value from a string
-func parsePercentage(s string) (uint64, error) {
-	if s[len(s)-1] != '%' {
-		return 0, fmt.Errorf("%q not a percentage value", s)
-	}
-	val, err := strconv.ParseUint(s[:len(s)-1], 10, 7)
-	if err != nil {
-		return 0, fmt.Errorf("invalid percentage value %q: %v", s, err)
-	}
-	if val < 1 || val > 100 {
-		return 0, fmt.Errorf("percentage value %q out of range (1-100)", s)
-	}
-	return val, nil
 }
 
 // parseL3Allocation parses a generic string map into l3Allocation struct
