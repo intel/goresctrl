@@ -493,18 +493,23 @@ func (raw Config) resolveL3Partitions(conf partitionSet) error {
 	log.Info("actual (and requested) L3 allocations per partition and cache id:")
 	infoStr := ""
 	for name, partition := range requests {
-		infoStr += name + "\n    "
-		for id, allocationReq := range partition {
+		infoStr += "\n    " + name
+		for _, id := range info.cacheIds {
+			infoStr += fmt.Sprintf("\n      %2d: ", id)
+			allocationReq := partition[id]
 			for _, typ := range []l3SchemaType{l3SchemaTypeUnified, l3SchemaTypeCode, l3SchemaTypeData} {
+				infoStr += string(typ) + " "
 				requested := allocationReq.get(typ)
 				switch v := requested.(type) {
 				case l3AbsoluteAllocation:
-					infoStr += fmt.Sprintf("%2d: <absolute allocation>", id)
-				case l3PctRangeAllocation:
+					infoStr += fmt.Sprintf("<absolute %#x>  ", v)
+				case l3PctAllocation:
 					granted := conf[name].L3[id].get(typ).(l3AbsoluteAllocation)
-					requestedPct := fmt.Sprintf("(%d%%)", v.highPct)
+					requestedPct := fmt.Sprintf("(%d%%)", v)
 					truePct := float64(bits.OnesCount64(uint64(granted))) * 100 / float64(fullBitmaskNumBits)
-					infoStr += fmt.Sprintf("%2d: %5.1f%% %-6s", id, truePct, requestedPct)
+					infoStr += fmt.Sprintf("%5.1f%% %-6s ", truePct, requestedPct)
+				case nil:
+					infoStr += "<not specified>  "
 				}
 			}
 		}
