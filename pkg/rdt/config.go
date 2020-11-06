@@ -199,8 +199,9 @@ func (a l3Allocation) set(typ l3SchemaType, v cacheAllocation) l3Allocation {
 		a.Code = v
 	case l3SchemaTypeData:
 		a.Data = v
+	default:
+		a.Unified = v
 	}
-	a.Unified = v
 
 	return a
 }
