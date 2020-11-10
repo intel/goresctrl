@@ -24,12 +24,11 @@ import (
 	"strconv"
 	"strings"
 
-	pkgcfg "github.com/intel/cri-resource-manager/pkg/config"
-	"github.com/intel/cri-resource-manager/pkg/utils"
+	"github.com/marquiz/goresctrl/pkg/utils"
 )
 
-// options represents the raw RDT configuration data from the configmap
-type options struct {
+// Config represents the raw RDT configuration data from the configmap
+type Config struct {
 	Options    schemaOptions `json:"options"`
 	Partitions map[string]struct {
 		L3Allocation rawAllocations `json:"l3Allocation"`
@@ -401,7 +400,7 @@ func listStrToArray(str string) ([]int, error) {
 
 // resolve tries to resolve the requested configuration into a working
 // configuration
-func (raw options) resolve() (config, error) {
+func (raw Config) resolve() (config, error) {
 	var err error
 	conf := config{Options: raw.Options}
 
@@ -422,7 +421,7 @@ func (raw options) resolve() (config, error) {
 
 // resolvePartitions tries to resolve the requested resource allocations of
 // partitions
-func (raw options) resolvePartitions() (partitionSet, error) {
+func (raw Config) resolvePartitions() (partitionSet, error) {
 	// Initialize empty partition configuration
 	conf := make(partitionSet, len(raw.Partitions))
 	numCacheIds := len(rdt.info.cacheIds)
@@ -447,7 +446,7 @@ func (raw options) resolvePartitions() (partitionSet, error) {
 }
 
 // resolveL3Partitions tries to resolve requested L3 allocations between partitions
-func (raw options) resolveL3Partitions(conf partitionSet) error {
+func (raw Config) resolveL3Partitions(conf partitionSet) error {
 	allocationsPerCacheID := make(map[uint64][]l3PartitionAllocation, len(rdt.info.cacheIds))
 	for _, id := range rdt.info.cacheIds {
 		allocationsPerCacheID[id] = make([]l3PartitionAllocation, 0, len(raw.Partitions))
@@ -646,7 +645,7 @@ func (s partitionSet) resolveCacheIDAbsolute(id uint64, partitions []l3Partition
 }
 
 // resolveMBPartitions tries to resolve requested MB allocations between partitions
-func (raw options) resolveMBPartitions(conf partitionSet) error {
+func (raw Config) resolveMBPartitions(conf partitionSet) error {
 	// We use percentage values directly from the raw conf
 	for name, partition := range raw.Partitions {
 		allocations, err := partition.MBAllocation.parseMB()
@@ -666,7 +665,7 @@ func (raw options) resolveMBPartitions(conf partitionSet) error {
 }
 
 // resolveClasses tries to resolve class allocations of all partitions
-func (raw options) resolveClasses() (classSet, error) {
+func (raw Config) resolveClasses() (classSet, error) {
 	classes := make(classSet)
 
 	for bname, partition := range raw.Partitions {
@@ -959,17 +958,4 @@ func parseMBAllocation(raw []interface{}) (uint64, error) {
 		return 0, fmt.Errorf("missing 'MBps' value from mbSchema; required because 'mba_MBps' is enabled in the system")
 	}
 	return 0, fmt.Errorf("missing '%%' value from mbSchema; required because percentage-based MBA allocation is enabled in the system")
-}
-
-// Currently active set of "raw" options
-var opt = defaultOptions().(*options)
-
-// defaultOptions returns a new instance of "raw" options set to their defaults
-func defaultOptions() interface{} {
-	return &options{}
-}
-
-// Register us for configuration handling.
-func init() {
-	pkgcfg.Register(ConfigModuleName, "RDT control", opt, defaultOptions)
 }

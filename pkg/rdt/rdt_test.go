@@ -18,6 +18,7 @@ package rdt
 
 import (
 	"io/ioutil"
+	stdlog "log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,9 +28,11 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/intel/cri-resource-manager/pkg/utils"
-	testdata "github.com/intel/cri-resource-manager/test/data/rdt"
+	"github.com/marquiz/goresctrl/pkg/utils"
+	testdata "github.com/marquiz/goresctrl/test/data"
 )
+
+const mockGroupPrefix string = "goresctrl."
 
 type mockResctrlFs struct {
 	t *testing.T
@@ -43,7 +46,7 @@ func newMockResctrlFs(t *testing.T, name, mountOpts string) (*mockResctrlFs, err
 	m := &mockResctrlFs{}
 
 	m.origDir = testdata.Path(name)
-	m.baseDir, err = ioutil.TempDir("", "cri-resmgr.test.")
+	m.baseDir, err = ioutil.TempDir("", "goresctrl.test.")
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +70,7 @@ func (m *mockResctrlFs) delete() error {
 }
 
 func (m *mockResctrlFs) initMockMonGroup(class, name string) {
-	m.copyFromOrig(filepath.Join("mon_groups", "example"), filepath.Join(resctrlGroupPrefix+class, "mon_groups", resctrlGroupPrefix+name))
+	m.copyFromOrig(filepath.Join("mon_groups", "example"), filepath.Join(mockGroupPrefix+class, "mon_groups", mockGroupPrefix+name))
 }
 
 func (m *mockResctrlFs) copyFromOrig(relSrc, relDst string) {
@@ -99,14 +102,16 @@ func verifyTextFile(t *testing.T, path, content string) {
 	}
 }
 
-func setTestConfig(t *testing.T, data string) {
-	if err := yaml.Unmarshal([]byte(data), opt); err != nil {
+func parseTestConfig(t *testing.T, data string) *Config {
+	c := &Config{}
+	if err := yaml.Unmarshal([]byte(data), c); err != nil {
 		t.Fatalf("failed to parse rdt config: %v", err)
 	}
+	return c
 }
 
 const rdtTestConfig string = `
-options:
+config:
   l3:
     optional: false
   mb:
@@ -141,11 +146,12 @@ partitions:
 
 // TestRdt tests the rdt public API, i.e. exported functionality of the package
 func TestRdt(t *testing.T) {
-	log.EnableDebug(true)
-
 	//
 	// 1. test uninitialized interface
 	//
+	l := NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt-test ] ", 0))
+	SetLogger(l)
+
 	rdt = &control{Logger: log}
 
 	classes := GetClasses()
@@ -166,17 +172,16 @@ func TestRdt(t *testing.T) {
 	}
 	defer mockFs.delete()
 
-	setTestConfig(t, rdtTestConfig)
-
-	if err := Initialize(); err != nil {
+	conf := parseTestConfig(t, rdtTestConfig)
+	if err := Initialize(mockGroupPrefix, conf); err != nil {
 		t.Fatalf("rdt initialization failed: %v", err)
 	}
 
 	// Check that the path() and relPath() methods work correctly
-	if p := rdt.classes["Guaranteed"].path("foo"); p != filepath.Join(mockFs.baseDir, "resctrl", "cri-resmgr.Guaranteed", "foo") {
+	if p := rdt.classes["Guaranteed"].path("foo"); p != filepath.Join(mockFs.baseDir, "resctrl", "goresctrl.Guaranteed", "foo") {
 		t.Errorf("path() returned wrong path %q", p)
 	}
-	if p := rdt.classes["Guaranteed"].relPath("foo"); p != filepath.Join("cri-resmgr.Guaranteed", "foo") {
+	if p := rdt.classes["Guaranteed"].relPath("foo"); p != filepath.Join("goresctrl.Guaranteed", "foo") {
 		t.Errorf("relPath() returned wrong path %q", p)
 	}
 
@@ -188,11 +193,11 @@ func TestRdt(t *testing.T) {
 	verifyTextFile(t, rdt.classes["Guaranteed"].path("schemata"),
 		"L3:0=fff00;1=fff00;2=fff00;3=fff00\nMB:0=100;1=100;2=100;3=100\n")
 
-	// Verify that existing cri-resmgr monitor groups were removed
+	// Verify that existing goresctrl monitor groups were removed
 	for _, cls := range []string{RootClassName, "Guaranteed"} {
 		files, _ := ioutil.ReadDir(rdt.classes[cls].path("mon_groups"))
 		for _, f := range files {
-			if strings.HasPrefix(resctrlGroupPrefix, f.Name()) {
+			if strings.HasPrefix(mockGroupPrefix, f.Name()) {
 				t.Errorf("unexpected monitor group found %q", f.Name())
 			}
 		}
@@ -255,17 +260,17 @@ func TestRdt(t *testing.T) {
 		t.Errorf("unexpected monitoring groups: %v", mgs)
 	}
 
-	mgPath := rdt.classes["Guaranteed"].path("mon_groups", "cri-resmgr."+mgName)
+	mgPath := rdt.classes["Guaranteed"].path("mon_groups", "goresctrl."+mgName)
 	if _, err := os.Stat(mgPath); err != nil {
 		t.Errorf("mon group directory not found: %v", err)
 	}
 
 	// Check that the monGroup.path() and relPath() methods work correctly
 	mgi := rdt.classes["Guaranteed"].monGroups[mgName]
-	if p := mgi.path("foo"); p != filepath.Join(mockFs.baseDir, "resctrl", "cri-resmgr.Guaranteed", "mon_groups", "cri-resmgr."+mgName, "foo") {
+	if p := mgi.path("foo"); p != filepath.Join(mockFs.baseDir, "resctrl", "goresctrl.Guaranteed", "mon_groups", "goresctrl."+mgName, "foo") {
 		t.Errorf("path() returned wrong path %q", p)
 	}
-	if p := mgi.relPath("foo"); p != filepath.Join("cri-resmgr.Guaranteed", "mon_groups", "cri-resmgr."+mgName, "foo") {
+	if p := mgi.relPath("foo"); p != filepath.Join("goresctrl.Guaranteed", "mon_groups", "goresctrl."+mgName, "foo") {
 		t.Errorf("relPath() returned wrong path %q", p)
 	}
 
