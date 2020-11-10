@@ -404,7 +404,7 @@ func (raw Config) resolve() (config, error) {
 	var err error
 	conf := config{Options: raw.Options}
 
-	log.Debug("resolving configuration options:\n%s", utils.DumpJSON(raw))
+	log.DebugBlock("", "resolving configuration: |\n%s", utils.DumpJSON(raw))
 
 	conf.Partitions, err = raw.resolvePartitions()
 	if err != nil {
@@ -510,7 +510,7 @@ func (raw Config) resolveL3Partitions(conf partitionSet) error {
 		}
 		infoStr += "\n"
 	}
-	log.InfoBlock("    ", "%s", infoStr)
+	log.InfoBlock("", "%s", infoStr)
 
 	return nil
 }

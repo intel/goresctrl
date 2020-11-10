@@ -239,7 +239,7 @@ func (c *control) setConfig(newConfig *Config) error {
 }
 
 func (c *control) configureResctrl(conf config) error {
-	c.DebugBlock("  applying ", "%s", utils.DumpJSON(conf))
+	c.DebugBlock("", "applying resolved config: |\n%s", utils.DumpJSON(conf))
 
 	// Remove stale resctrl groups
 	existingClasses, err := c.classesFromResctrlFs()
