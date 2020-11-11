@@ -151,8 +151,7 @@ func TestRdt(t *testing.T) {
 	//
 	// 1. test uninitialized interface
 	//
-	l := NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt-test ] ", 0))
-	SetLogger(l)
+	SetLogger(NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt-test-1 ] ", 0)))
 
 	if err := SetConfig(&Config{}); err == nil {
 		t.Errorf("setting config on uninitialized rdt succeeded unexpectedly")
@@ -186,6 +185,12 @@ func TestRdt(t *testing.T) {
 	}
 	if err := SetConfig(conf); err != nil {
 		t.Fatalf("rdt configuration failed: %v", err)
+	}
+
+	// Check that SetLogger() takes effect in the control interface, too
+	SetLogger(NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt-test-2 ] ", 0)))
+	if p := rdt.Logger.(*logger).Prefix(); p != "[ rdt-test-2 ] " {
+		t.Errorf("unexpected logger prefix %q", p)
 	}
 
 	// Check that the path() and relPath() methods work correctly

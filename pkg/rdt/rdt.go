@@ -136,6 +136,9 @@ type resctrlGroup struct {
 // may be called even before Initialize().
 func SetLogger(l Logger) {
 	log = l
+	if rdt != nil {
+		rdt.setLogger(l)
+	}
 }
 
 // Initialize discovers RDT support and initializes the  rdtControl singleton interface
@@ -224,6 +227,10 @@ func (c *control) getMonFeatures() map[MonResource][]string {
 	}
 
 	return ret
+}
+
+func (c *control) setLogger(l Logger) {
+	c.Logger = l
 }
 
 func (c *control) setConfig(newConfig *Config) error {
