@@ -43,7 +43,7 @@ type mockResctrlFs struct {
 
 func newMockResctrlFs(t *testing.T, name, mountOpts string) (*mockResctrlFs, error) {
 	var err error
-	m := &mockResctrlFs{}
+	m := &mockResctrlFs{t: t}
 
 	m.origDir = testdata.Path(name)
 	m.baseDir, err = ioutil.TempDir("", "goresctrl.test.")
@@ -65,8 +65,10 @@ func newMockResctrlFs(t *testing.T, name, mountOpts string) (*mockResctrlFs, err
 	return m, nil
 }
 
-func (m *mockResctrlFs) delete() error {
-	return os.RemoveAll(m.baseDir)
+func (m *mockResctrlFs) delete() {
+	if err := os.RemoveAll(m.baseDir); err != nil {
+		m.t.Fatalf("failed to delete mock resctrl fs: %v", err)
+	}
 }
 
 func (m *mockResctrlFs) initMockMonGroup(class, name string) {
@@ -186,11 +188,11 @@ func TestRdt(t *testing.T) {
 	}
 
 	// Verify that ctrl groups are correctly configured
-	verifyTextFile(t, rdt.classes["BestEffort"].path("schemata"),
+	mockFs.verifyTextFile(rdt.classes["BestEffort"].relPath("schemata"),
 		"L3:0=3f;1=3f;2=3f;3=3f\nMB:0=33;1=33;2=33;3=33\n")
-	verifyTextFile(t, rdt.classes["Burstable"].path("schemata"),
+	mockFs.verifyTextFile(rdt.classes["Burstable"].relPath("schemata"),
 		"L3:0=ff;1=ff;2=ff;3=ff\nMB:0=66;1=66;2=66;3=66\n")
-	verifyTextFile(t, rdt.classes["Guaranteed"].path("schemata"),
+	mockFs.verifyTextFile(rdt.classes["Guaranteed"].relPath("schemata"),
 		"L3:0=fff00;1=fff00;2=fff00;3=fff00\nMB:0=100;1=100;2=100;3=100\n")
 
 	// Verify that existing goresctrl monitor groups were removed
@@ -229,7 +231,7 @@ func TestRdt(t *testing.T) {
 		t.Errorf("GetPids() returned %s, expected %s", p, pids)
 	}
 
-	verifyTextFile(t, rdt.classes["Guaranteed"].path("tasks"), "10\n11\n12\n")
+	mockFs.verifyTextFile(rdt.classes["Guaranteed"].relPath("tasks"), "10\n11\n12\n")
 
 	// Test creating monitoring groups
 	cls, _ = GetClass("Guaranteed")
@@ -300,7 +302,7 @@ func TestRdt(t *testing.T) {
 	} else if !cmp.Equal(p, pids) {
 		t.Errorf("MonGroup.GetPids() returned %s, expected %s", p, pids)
 	}
-	verifyTextFile(t, rdt.classes["Guaranteed"].monGroups[mgName].path("tasks"), "10\n")
+	mockFs.verifyTextFile(rdt.classes["Guaranteed"].monGroups[mgName].relPath("tasks"), "10\n")
 
 	// Verify monitoring functionality
 	expected := MonData{

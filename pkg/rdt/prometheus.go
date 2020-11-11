@@ -122,6 +122,3 @@ func (c *collector) collectGroupMetrics(ch chan<- prometheus.Metric, mg MonGroup
 		}
 	}
 }
-
-func (r *resctrlGroup) updatePrometheusMetric(ch chan<- prometheus.Metric) {
-}
