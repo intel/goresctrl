@@ -219,10 +219,11 @@ func (a l3Allocation) getEffective(typ l3SchemaType) cacheAllocation {
 
 // Overlay function of the cacheAllocation interface
 func (a l3AbsoluteAllocation) Overlay(baseMask Bitmask) (Bitmask, error) {
-	shiftWidth := baseMask.lsbOne()
-	if shiftWidth < 0 {
-		return 0, rdtError("empty basemask not allowed")
+	if err := verifyL3BaseMask(baseMask); err != nil {
+		return 0, err
 	}
+
+	shiftWidth := baseMask.lsbOne()
 
 	// Treat our bitmask relative to the basemask
 	bitmask := Bitmask(a) << shiftWidth
@@ -247,18 +248,13 @@ func (a l3PctAllocation) Overlay(baseMask Bitmask) (Bitmask, error) {
 
 // Overlay function of the cacheAllocation interface
 func (a l3PctRangeAllocation) Overlay(baseMask Bitmask) (Bitmask, error) {
+	if err := verifyL3BaseMask(baseMask); err != nil {
+		return 0, err
+	}
+
 	baseMaskMsb := uint64(baseMask.msbOne())
 	baseMaskLsb := uint64(baseMask.lsbOne())
 	baseMaskNumBits := baseMaskMsb - baseMaskLsb + 1
-
-	// Check that the basemask contains one (and only one) contiguous block of
-	// (enough) bits set
-	if bits.OnesCount64(uint64(baseMask)) != int(baseMaskNumBits) {
-		return 0, rdtError("invalid basemask %#x: more than one block of bits set", baseMask)
-	}
-	if uint64(bits.OnesCount64(uint64(baseMask))) < info.l3MinCbmBits() {
-		return 0, rdtError("invalid basemask %#x: fewer than %d bits set", baseMask, info.l3MinCbmBits())
-	}
 
 	low, high := a.lowPct, a.highPct
 	if low == 0 {
@@ -299,6 +295,24 @@ func (a l3PctRangeAllocation) Overlay(baseMask Bitmask) (Bitmask, error) {
 	value := ((1 << (msb - lsb + 1)) - 1) << (lsb + baseMaskLsb)
 
 	return Bitmask(value), nil
+}
+
+func verifyL3BaseMask(baseMask Bitmask) error {
+	if baseMask == 0 {
+		return fmt.Errorf("empty basemask not allowed")
+	}
+
+	// Check that the basemask contains one (and only one) contiguous block of
+	// (enough) bits set
+	baseMaskWidth := baseMask.msbOne() - baseMask.lsbOne() + 1
+	if bits.OnesCount64(uint64(baseMask)) != baseMaskWidth {
+		return fmt.Errorf("invalid basemask %#x: more than one block of bits set", baseMask)
+	}
+	if uint64(bits.OnesCount64(uint64(baseMask))) < info.l3MinCbmBits() {
+		return fmt.Errorf("invalid basemask %#x: fewer than %d bits set", baseMask, info.l3MinCbmBits())
+	}
+
+	return nil
 }
 
 // MarshalJSON implements the Marshaler interface of "encoding/json"
