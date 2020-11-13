@@ -493,18 +493,23 @@ func (raw Config) resolveL3Partitions(conf partitionSet) error {
 	log.Info("actual (and requested) L3 allocations per partition and cache id:")
 	infoStr := ""
 	for name, partition := range requests {
-		infoStr += name + "\n    "
-		for id, allocationReq := range partition {
+		infoStr += "\n    " + name
+		for _, id := range info.cacheIds {
+			infoStr += fmt.Sprintf("\n      %2d: ", id)
+			allocationReq := partition[id]
 			for _, typ := range []l3SchemaType{l3SchemaTypeUnified, l3SchemaTypeCode, l3SchemaTypeData} {
+				infoStr += string(typ) + " "
 				requested := allocationReq.get(typ)
 				switch v := requested.(type) {
 				case l3AbsoluteAllocation:
-					infoStr += fmt.Sprintf("%2d: <absolute allocation>", id)
-				case l3PctRangeAllocation:
+					infoStr += fmt.Sprintf("<absolute %#x>  ", v)
+				case l3PctAllocation:
 					granted := conf[name].L3[id].get(typ).(l3AbsoluteAllocation)
-					requestedPct := fmt.Sprintf("(%d%%)", v.highPct)
+					requestedPct := fmt.Sprintf("(%d%%)", v)
 					truePct := float64(bits.OnesCount64(uint64(granted))) * 100 / float64(fullBitmaskNumBits)
-					infoStr += fmt.Sprintf("%2d: %5.1f%% %-6s", id, truePct, requestedPct)
+					infoStr += fmt.Sprintf("%5.1f%% %-6s ", truePct, requestedPct)
+				case nil:
+					infoStr += "<not specified>  "
 				}
 			}
 		}
@@ -564,7 +569,7 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 		case l3PctAllocation:
 			total += uint64(a)
 		case l3AbsoluteAllocation:
-			return fmt.Errorf("error resolving L3 allocation for cached id %d: mixing relative and absolute allocations between partitions not supported", id)
+			return fmt.Errorf("error resolving L3 allocation for cache id %d: mixing relative and absolute allocations between partitions not supported", id)
 		case l3PctRangeAllocation:
 			return fmt.Errorf("percentage ranges in partition allocation not supported")
 		default:
@@ -574,7 +579,7 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 	if total < 100 {
 		log.Info("requested total L3 %q partition allocation for cache id %d <100%% (%d%%)", typ, id, total)
 	} else if total > 100 {
-		return fmt.Errorf("accumulated L3 %q partition allocation requests for cache id %d exceed 100%% (%d%%)", typ, id, total)
+		return fmt.Errorf("accumulated L3 %q partition allocation requests for cache id %d exceeds 100%% (%d%%)", typ, id, total)
 	}
 
 	// Sort partition allocations. We want to resolve smallest allocations
@@ -631,7 +636,7 @@ func (s partitionSet) resolveCacheIDAbsolute(id uint64, partitions []l3Partition
 	for _, partition := range partitions {
 		a, ok := partition.allocation.get(typ).(l3AbsoluteAllocation)
 		if !ok {
-			return fmt.Errorf("error resolving L3 allocation for cached id %d: mixing absolute and relative allocations between partitions not supported", id)
+			return fmt.Errorf("error resolving L3 allocation for cache id %d: mixing absolute and relative allocations between partitions not supported", id)
 		}
 		if Bitmask(a)&mask > 0 {
 			return fmt.Errorf("overlapping L3 partition allocation requests for cache id %d", id)

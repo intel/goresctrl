@@ -449,7 +449,7 @@ func (c *ctrlGroup) configure(name string, class classConfig,
 		schemata += class.MBSchema.ToStr(partition.MB)
 	default:
 		if class.MBSchema != nil && !options.MB.Optional {
-			return rdtError("memory bandwidth allocation specified in configuration but not supported by system")
+			return rdtError("memory bandwidth allocation for %q specified in configuration but not supported by system", name)
 		}
 	}
 
