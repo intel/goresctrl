@@ -1,4 +1,4 @@
-module github.com/marquiz/goresctrl
+module github.com/intel/goresctrl
 
 go 1.14
 

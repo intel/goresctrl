@@ -28,8 +28,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/marquiz/goresctrl/pkg/utils"
-	testdata "github.com/marquiz/goresctrl/test/data"
+	"github.com/intel/goresctrl/pkg/utils"
+	testdata "github.com/intel/goresctrl/test/data"
 )
 
 const mockGroupPrefix string = "goresctrl."
