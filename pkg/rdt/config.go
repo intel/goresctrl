@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/marquiz/goresctrl/pkg/utils"
+	"github.com/intel/goresctrl/pkg/utils"
 )
 
 // Config represents the raw RDT configuration data from the configmap

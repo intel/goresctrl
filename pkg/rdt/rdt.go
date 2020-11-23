@@ -28,7 +28,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/marquiz/goresctrl/pkg/utils"
+	"github.com/intel/goresctrl/pkg/utils"
 )
 
 const (
