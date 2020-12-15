@@ -29,7 +29,7 @@ import (
 
 // Config represents the raw RDT configuration data from the configmap
 type Config struct {
-	Options    schemaOptions `json:"options"`
+	Options    Options `json:"options"`
 	Partitions map[string]struct {
 		L3Allocation interface{} `json:"l3Allocation"`
 		MBAllocation interface{} `json:"mbAllocation"`
@@ -43,7 +43,7 @@ type Config struct {
 // config represents the final (parsed and resolved) runtime configuration of
 // RDT Control
 type config struct {
-	Options    schemaOptions
+	Options    Options
 	Partitions partitionSet
 	Classes    classSet
 }
@@ -68,8 +68,8 @@ type classConfig struct {
 	MBSchema  mbSchema
 }
 
-// schemaOptions contains the common settings for all classes
-type schemaOptions struct {
+// Options contains the common settings for all classes
+type Options struct {
 	L3 l3Options `json:"l3"`
 	MB mbOptions `json:"mb"`
 }

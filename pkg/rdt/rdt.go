@@ -452,7 +452,7 @@ func (c *ctrlGroup) GetMonGroups() []MonGroup {
 }
 
 func (c *ctrlGroup) configure(name string, class classConfig,
-	partition partitionConfig, options schemaOptions) error {
+	partition partitionConfig, options Options) error {
 	schemata := ""
 
 	// Handle L3 cache allocation
