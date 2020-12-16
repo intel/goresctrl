@@ -1202,6 +1202,11 @@ partitions:
 		defer mockFs.delete()
 
 		conf := parseTestConfig(t, tc.config)
+		confDataOld, err := yaml.Marshal(conf)
+		if err != nil {
+			t.Fatalf("marshalling config failed: %v", err)
+		}
+
 		if err := Initialize(mockGroupPrefix); err != nil {
 			t.Fatalf("resctrl initialization failed: %v", err)
 		}
@@ -1224,6 +1229,12 @@ partitions:
 				t.Fatalf("resctrl configuration failed: %v", err)
 			}
 			verifySchemata(&tc)
+		}
+
+		if confDataNew, err := yaml.Marshal(conf); err != nil {
+			t.Fatalf("marshalling config failed: %v", err)
+		} else if !cmp.Equal(confDataNew, confDataOld) {
+			t.Fatalf("SetConfig altered config data:\n%s\nVS.\n%s", confDataOld, confDataNew)
 		}
 	}
 }
