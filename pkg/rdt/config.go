@@ -796,7 +796,6 @@ func preparseRawAllocations(raw interface{}, defaultVal interface{}, initEmpty b
 		} else if defaultVal == nil {
 			return nil, fmt.Errorf("'all' is missing")
 		}
-		delete(value, "all")
 		rawPerCacheId = value
 	default:
 		return allocations, fmt.Errorf("invalid structure of allocation schema '%v' (%T)", raw, raw)
@@ -807,6 +806,9 @@ func preparseRawAllocations(raw interface{}, defaultVal interface{}, initEmpty b
 	}
 
 	for key, val := range rawPerCacheId {
+		if key == "all" {
+			continue
+		}
 		ids, err := listStrToArray(key)
 		if err != nil {
 			return nil, err
