@@ -177,9 +177,9 @@ func Initialize(resctrlGroupPrefix string) error {
 
 // SetConfig parses new configuration and reconfigures the resctrl filesystem
 // accordingly
-func SetConfig(c *Config) error {
+func SetConfig(c *Config, force bool) error {
 	if rdt != nil {
-		return rdt.setConfig(c)
+		return rdt.setConfig(c, force)
 	}
 	return rdtError("rdt not initialized")
 }
@@ -249,7 +249,7 @@ func (c *control) setLogger(l Logger) {
 	c.Logger = l
 }
 
-func (c *control) setConfig(newConfig *Config) error {
+func (c *control) setConfig(newConfig *Config, force bool) error {
 	c.Info("configuration update")
 
 	conf, err := (*newConfig).resolve()
@@ -257,7 +257,7 @@ func (c *control) setConfig(newConfig *Config) error {
 		return rdtError("invalid configuration: %v", err)
 	}
 
-	err = c.configureResctrl(conf)
+	err = c.configureResctrl(conf, force)
 	if err != nil {
 		return rdtError("resctrl configuration failed: %v", err)
 	}
@@ -270,7 +270,7 @@ func (c *control) setConfig(newConfig *Config) error {
 	return nil
 }
 
-func (c *control) configureResctrl(conf config) error {
+func (c *control) configureResctrl(conf config, force bool) error {
 	c.DebugBlock("", "applying resolved config: |\n%s", utils.DumpJSON(conf))
 
 	// Remove stale resctrl groups
@@ -281,12 +281,14 @@ func (c *control) configureResctrl(conf config) error {
 
 	for name, cls := range classesFromFs {
 		if _, ok := conf.Classes[cls.name]; cls.name != RootClassName && !ok {
-			tasks, err := cls.GetPids()
-			if err != nil {
-				return rdtError("failed to get resctrl group tasks: %v", err)
-			}
-			if len(tasks) > 0 {
-				return rdtError("refusing to remove non-empty resctrl group %q", cls.relPath(""))
+			if !force {
+				tasks, err := cls.GetPids()
+				if err != nil {
+					return rdtError("failed to get resctrl group tasks: %v", err)
+				}
+				if len(tasks) > 0 {
+					return rdtError("refusing to remove non-empty resctrl group %q", cls.relPath(""))
+				}
 			}
 			log.Debug("removing existing resctrl group %q", cls.relPath(""))
 			err = groupRemoveFunc(cls.path(""))

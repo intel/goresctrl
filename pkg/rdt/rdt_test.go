@@ -176,7 +176,7 @@ partitions:
 	//
 	SetLogger(NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt-test-1 ] ", 0)))
 
-	if err := SetConfig(&Config{}); err == nil {
+	if err := SetConfig(&Config{}, false); err == nil {
 		t.Errorf("setting config on uninitialized rdt succeeded unexpectedly")
 
 	}
@@ -215,10 +215,18 @@ partitions:
 	verifyGroupNames(cls.GetMonGroups(), []string{})
 	cls, _ = GetClass("Guaranteed")
 	verifyGroupNames(cls.GetMonGroups(), []string{"predefined_group_live"})
+	cls, _ = GetClass("Stale")
+	if err := cls.AddPids("99"); err != nil {
+		t.Fatalf("AddPids() failed: %v", err)
+	}
 
-	// Check that confiouration succeeds
-	if err := SetConfig(conf); err != nil {
-		t.Fatalf("rdt configuration failed: %v", err)
+	// Configuration should fail as "Stale" class has pids assigned to it
+	if err := SetConfig(conf, false); err == nil {
+		t.Fatalf("rdt configuration succeeded unexpetedly")
+	}
+	// Forced configuration should succeed
+	if err := SetConfig(conf, true); err != nil {
+		t.Fatalf("rdt forced configuration failed: %v", err)
 	}
 
 	// Check that SetLogger() takes effect in the control interface, too
@@ -1211,7 +1219,7 @@ partitions:
 			t.Fatalf("resctrl initialization failed: %v", err)
 		}
 
-		err = SetConfig(conf)
+		err = SetConfig(conf, false)
 		if tc.configErrRe != "" {
 			if err == nil {
 				t.Fatalf("resctrl configuration succeeded unexpectedly")
