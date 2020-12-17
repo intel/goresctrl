@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sigs.k8s.io/yaml"
+	"sort"
 	"strings"
 	"testing"
 
@@ -163,6 +164,8 @@ partitions:
 		if len(b) == 0 && len(names) == 0 {
 			return
 		}
+		sort.Strings(names)
+		sort.Strings(b)
 		if !cmp.Equal(names, b) {
 			t.Errorf("unexpected class/group names: expected %s got %s", b, names)
 		}
@@ -402,6 +405,27 @@ partitions:
 	if !cmp.Equal(md, expected) {
 		t.Errorf("unexcpected monitoring data\nexpected:\n%s\nreceived:\n%s", utils.DumpJSON(expected), utils.DumpJSON(md))
 	}
+
+	//
+	// 3. Test discovery
+	//
+	if err := DiscoverClasses(""); err != nil {
+		t.Fatalf("DiscoverClasses() failed unexpectedly")
+	}
+	classes = GetClasses()
+	verifyGroupNames(classes, []string{"Guaranteed", "non_goresctrl.Group", "SYSTEM_DEFAULT"})
+
+	if err := DiscoverClasses("non_goresctrl."); err != nil {
+		t.Fatalf("DiscoverClasses() failed unexpectedly")
+	}
+	classes = GetClasses()
+	verifyGroupNames(classes, []string{"Group", "SYSTEM_DEFAULT"})
+
+	if err := DiscoverClasses("non-existing-prefix"); err != nil {
+		t.Fatalf("DiscoverClasses() failed unexpectedly")
+	}
+	classes = GetClasses()
+	verifyGroupNames(classes, []string{"SYSTEM_DEFAULT"})
 }
 
 // TestConfig tests configuration parsing and resolving

@@ -124,6 +124,7 @@ const (
 type ctrlGroup struct {
 	resctrlGroup
 
+	monPrefix string
 	monGroups map[string]*monGroup
 }
 
@@ -176,6 +177,16 @@ func Initialize(resctrlGroupPrefix string) error {
 	rdt = r
 
 	return nil
+}
+
+// DiscoverClasses discovers existing classes from the resctrl filesystem.
+// Makes it possible to discover gropus with another prefix than was set with
+// Initialize(). The original prefix is still used for monitoring groups.
+func DiscoverClasses(resctrlGroupPrefix string) error {
+	if rdt != nil {
+		return rdt.discoverFromResctrl(resctrlGroupPrefix)
+	}
+	return rdtError("rdt not initialized")
 }
 
 // SetConfig parses new configuration and reconfigures the resctrl filesystem
@@ -304,9 +315,11 @@ func (c *control) configureResctrl(conf config, force bool) error {
 	}
 
 	for name, cls := range c.classes {
-		if _, ok := conf.Classes[cls.name]; cls.name != RootClassName && !ok {
-			log.Debug("dropping stale class %q", name)
-			delete(c.classes, name)
+		if _, ok := conf.Classes[cls.name]; !ok || cls.prefix != c.resctrlGroupPrefix {
+			if cls.name != RootClassName {
+				log.Debug("dropping stale class %q (%q)", name, cls.path(""))
+				delete(c.classes, name)
+			}
 		}
 	}
 
@@ -318,7 +331,7 @@ func (c *control) configureResctrl(conf config, force bool) error {
 	// Try to apply given configuration
 	for name, class := range conf.Classes {
 		if _, ok := c.classes[name]; !ok {
-			cg, err := newCtrlGroup(c.resctrlGroupPrefix, name)
+			cg, err := newCtrlGroup(c.resctrlGroupPrefix, c.resctrlGroupPrefix, name)
 			if err != nil {
 				return err
 			}
@@ -337,17 +350,61 @@ func (c *control) configureResctrl(conf config, force bool) error {
 	return nil
 }
 
+func (c *control) discoverFromResctrl(prefix string) error {
+	c.Debug("running class discovery from resctrl filesystem using prefix %q", prefix)
+
+	classesFromFs, err := c.classesFromResctrlFsPrefix(prefix)
+	if err != nil {
+		return err
+	}
+
+	// Drop stale classes
+	for name, cls := range c.classes {
+		if _, ok := classesFromFs[cls.name]; !ok || cls.prefix != prefix {
+			if cls.name != RootClassName {
+				log.Debug("dropping stale class %q (%q)", name, cls.path(""))
+				delete(c.classes, name)
+			}
+		}
+	}
+
+	for name, cls := range classesFromFs {
+		if _, ok := c.classes[name]; !ok {
+			c.classes[name] = cls
+			log.Debug("adding discovered class %q (%q)", name, cls.path(""))
+		}
+	}
+
+	if err := c.pruneMonGroups(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (c *control) classesFromResctrlFs() (map[string]*ctrlGroup, error) {
+	return c.classesFromResctrlFsPrefix(c.resctrlGroupPrefix)
+}
+
+func (c *control) classesFromResctrlFsPrefix(prefix string) (map[string]*ctrlGroup, error) {
 	names := []string{RootClassName}
-	if n, err := resctrlGroupsFromFs(c.resctrlGroupPrefix, info.resctrlPath); err != nil {
+	if g, err := resctrlGroupsFromFs(prefix, info.resctrlPath); err != nil {
 		return nil, err
 	} else {
-		names = append(names, n...)
+		for _, n := range g {
+			if prefix != c.resctrlGroupPrefix &&
+				strings.HasPrefix(n, c.resctrlGroupPrefix) &&
+				strings.HasPrefix(c.resctrlGroupPrefix, prefix) {
+				// Skip groups in the standard namespace
+				continue
+			}
+			names = append(names, n[len(prefix):])
+		}
 	}
 
 	classes := make(map[string]*ctrlGroup, len(names)+1)
 	for _, name := range names {
-		g, err := newCtrlGroup(c.resctrlGroupPrefix, name)
+		g, err := newCtrlGroup(prefix, c.resctrlGroupPrefix, name)
 		if err != nil {
 			return nil, err
 		}
@@ -389,9 +446,10 @@ func (c *control) cmdError(origErr error) error {
 	return origErr
 }
 
-func newCtrlGroup(prefix string, name string) (*ctrlGroup, error) {
+func newCtrlGroup(prefix, monPrefix, name string) (*ctrlGroup, error) {
 	cg := &ctrlGroup{
 		resctrlGroup: resctrlGroup{prefix: prefix, name: name},
+		monPrefix:    monPrefix,
 	}
 
 	if err := os.Mkdir(cg.path(""), 0755); err != nil && !os.IsExist(err) {
@@ -413,7 +471,7 @@ func (c *ctrlGroup) CreateMonGroup(name string, annotations map[string]string) (
 	}
 
 	log.Debug("creating monitoring group %s/%s", c.name, name)
-	mg, err := newMonGroup(c.prefix, name, c, annotations)
+	mg, err := newMonGroup(c.monPrefix, name, c, annotations)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new monitoring group %q: %v", name, err)
 	}
@@ -518,14 +576,15 @@ func (c *ctrlGroup) configure(name string, class classConfig,
 }
 
 func (c *ctrlGroup) monGroupsFromResctrlFs() (map[string]*monGroup, error) {
-	names, err := resctrlGroupsFromFs(c.prefix, c.path("mon_groups"))
+	names, err := resctrlGroupsFromFs(c.monPrefix, c.path("mon_groups"))
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 
 	grps := make(map[string]*monGroup, len(names))
 	for _, name := range names {
-		mg, err := newMonGroup(c.prefix, name, c, nil)
+		name = name[len(c.monPrefix):]
+		mg, err := newMonGroup(c.monPrefix, name, c, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -709,7 +768,7 @@ func resctrlGroupsFromFs(prefix string, path string) ([]string, error) {
 		filename := file.Name()
 		if strings.HasPrefix(filename, prefix) {
 			if s, err := os.Stat(filepath.Join(path, filename, "tasks")); err == nil && !s.IsDir() {
-				grps = append(grps, filename[len(prefix):])
+				grps = append(grps, filename)
 			}
 		}
 	}
