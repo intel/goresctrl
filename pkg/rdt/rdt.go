@@ -696,7 +696,9 @@ func resctrlGroupsFromFs(prefix string, path string) ([]string, error) {
 	for _, file := range files {
 		filename := file.Name()
 		if strings.HasPrefix(filename, prefix) {
-			grps = append(grps, filename[len(prefix):])
+			if s, err := os.Stat(filepath.Join(path, filename, "tasks")); err == nil && !s.IsDir() {
+				grps = append(grps, filename[len(prefix):])
+			}
 		}
 	}
 	return grps, nil
