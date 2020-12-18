@@ -344,6 +344,18 @@ partitions:
 		t.Errorf("unexpected error when checking directory of deleted mon group: %v", err)
 	}
 
+	for _, n := range []string{"foo", "bar", "baz"} {
+		if _, err := cls.CreateMonGroup(n, map[string]string{}); err != nil {
+			t.Errorf("creating mon group failed: %v", err)
+		}
+	}
+	if err := cls.DeleteMonGroups(); err != nil {
+		t.Errorf("unexpected error when deleting all mon groups: %v", err)
+	}
+	if mgs := cls.GetMonGroups(); len(mgs) != 0 {
+		t.Errorf("unexpected mon groups exist: %v", mgs)
+	}
+
 	// Verify assigning pids to monitor group
 	mgName = "test_group_2"
 	mockFs.initMockMonGroup("Guaranteed", mgName)
