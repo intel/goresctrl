@@ -66,6 +66,9 @@ type CtrlGroup interface {
 	// DeleteMonGroup deletes a monitoring group from the class.
 	DeleteMonGroup(name string) error
 
+	// DeleteMonGroups deletes all monitoring groups.
+	DeleteMonGroups() error
+
 	// GetMonGroup returns a specific monitoring group under the class
 	GetMonGroup(name string) (MonGroup, bool)
 
@@ -434,6 +437,15 @@ func (c *ctrlGroup) DeleteMonGroup(name string) error {
 
 	delete(c.monGroups, name)
 
+	return nil
+}
+
+func (c *ctrlGroup) DeleteMonGroups() error {
+	for name := range c.monGroups {
+		if err := c.DeleteMonGroup(name); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
