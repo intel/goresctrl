@@ -619,7 +619,7 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 	minCbmBits := info.l3MinCbmBits()
 	bitsTotal := uint64(info.l3CbmMask().lsbZero())
 	bitsAvailable := bitsTotal
-	for i, req := range reqs {
+	for _, req := range reqs {
 		percentageAvailable := bitsAvailable * 100 / bitsTotal
 
 		// This might happen e.g. if number of partitions would be greater
@@ -636,8 +636,8 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 		if numBits < minCbmBits {
 			numBits = minCbmBits
 		}
-		// Don't overflow, allocate all remaining bits to the last partition
-		if numBits > bitsAvailable || i == len(partitions)-1 {
+		// Don't overflow
+		if numBits > bitsAvailable {
 			numBits = bitsAvailable
 		}
 
