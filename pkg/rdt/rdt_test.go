@@ -867,6 +867,30 @@ partitions:
 		},
 		// Testcase
 		TC{
+			name: "L3 partial allocation",
+			fs:   "resctrl.nomb",
+			config: `
+partitions:
+  part-1:
+    l3Allocation:
+      all: "20%"
+      1: "40%"
+      2: "60%"
+      3: "80%"
+    classes:
+      class-1:
+`,
+			schemata: map[string]Schemata{
+				"class-1": Schemata{
+					l3: "0=f;1=ff;2=fff;3=ffff",
+				},
+				"SYSTEM_DEFAULT": Schemata{
+					l3: "0=fffff;1=fffff;2=fffff;3=fffff",
+				},
+			},
+		},
+		// Testcase
+		TC{
 			name:        "L3 partition non-contiguous bitmask (fail)",
 			fs:          "resctrl.nomb",
 			configErrRe: `failed to parse L3 allocation request for partition "part-1": invalid cache bitmask "0x2f": more than one continuous block of ones`,
