@@ -49,7 +49,7 @@ type config struct {
 }
 
 // partitionSet represents the pool of rdt partitions
-type partitionSet map[string]partitionConfig
+type partitionSet map[string]*partitionConfig
 
 // classSet represents the pool of rdt classes
 type classSet map[string]classConfig
@@ -436,7 +436,7 @@ func (raw Config) resolvePartitions() (partitionSet, error) {
 	conf := make(partitionSet, len(raw.Partitions))
 	numCacheIds := len(info.cacheIds)
 	for name := range raw.Partitions {
-		conf[name] = partitionConfig{L3: make(l3Schema, numCacheIds),
+		conf[name] = &partitionConfig{L3: make(l3Schema, numCacheIds),
 			MB: make(mbSchema, numCacheIds)}
 	}
 
@@ -457,13 +457,6 @@ func (raw Config) resolvePartitions() (partitionSet, error) {
 
 // resolveL3Partitions tries to resolve requested L3 allocations between partitions
 func (raw Config) resolveL3Partitions(conf partitionSet) error {
-	allocationsPerCacheID := make(map[uint64][]l3PartitionAllocation, len(info.cacheIds))
-	for _, id := range info.cacheIds {
-		allocationsPerCacheID[id] = make([]l3PartitionAllocation, 0, len(raw.Partitions))
-	}
-	// Helper structure for printing out human-readable info in the end
-	requests := map[string]map[uint64]l3Allocation{}
-
 	// Resolve partitions in sorted order for reproducibility
 	names := make([]string, 0, len(raw.Partitions))
 	for name := range raw.Partitions {
@@ -471,47 +464,37 @@ func (raw Config) resolveL3Partitions(conf partitionSet) error {
 	}
 	sort.Strings(names)
 
-	// Parse requested allocations from raw config and transfer them to our
-	// per-cache-id structure
-	numNils := 0
+	resolver := newCacheResolver(names)
+
+	// Parse requested allocations from raw config load the resolver
 	for _, name := range names {
 		allocations, err := parseRawL3Allocations(raw.Partitions[name].L3Allocation)
 		if err != nil {
 			return fmt.Errorf("failed to parse L3 allocation request for partition %q: %v", name, err)
 		}
 
-		requests[name] = allocations
-
-		if allocations == nil {
-			numNils++
-		}
-
-		for id, val := range allocations {
-			allocationsPerCacheID[id] = append(allocationsPerCacheID[id], l3PartitionAllocation{name: name, allocation: val})
-		}
+		resolver.requests[name] = allocations
 	}
 
-	if numNils == len(raw.Partitions) {
+	// Run resolver fo partition allocations
+	grants, err := resolver.resolve()
+	if err != nil {
+		return err
+	}
+	if grants == nil {
 		log.Debug("L3 allocation disabled for all partitions")
 		return nil
-	} else if numNils != 0 {
-		return fmt.Errorf("L3 allocation only specified for a subset of partitions")
 	}
 
-	// Next, try to resolve partition allocations, separately for each cache-id
-	fullBitmaskNumBits := uint64(info.l3CbmMask().lsbZero())
-	for id := range info.cacheIds {
-		err := conf.resolveCacheID(uint64(id), allocationsPerCacheID[uint64(id)])
-		if err != nil {
-			return err
-		}
+	for name, grant := range grants {
+		conf[name].L3 = grant
 	}
 
 	log.Info("actual (and requested) L3 allocations per partition and cache id:")
 	infoStr := ""
-	for name, partition := range requests {
+	for name, partition := range resolver.requests {
 		infoStr += "\n    " + name
-		for _, id := range info.cacheIds {
+		for _, id := range resolver.ids {
 			infoStr += fmt.Sprintf("\n      %2d: ", id)
 			allocationReq := partition[id]
 			for _, typ := range []l3SchemaType{l3SchemaTypeUnified, l3SchemaTypeCode, l3SchemaTypeData} {
@@ -521,9 +504,9 @@ func (raw Config) resolveL3Partitions(conf partitionSet) error {
 				case l3AbsoluteAllocation:
 					infoStr += fmt.Sprintf("<absolute %#x>  ", v)
 				case l3PctAllocation:
-					granted := conf[name].L3[id].get(typ).(l3AbsoluteAllocation)
+					granted := grants[name][id].get(typ).(l3AbsoluteAllocation)
 					requestedPct := fmt.Sprintf("(%d%%)", v)
-					truePct := float64(bits.OnesCount64(uint64(granted))) * 100 / float64(fullBitmaskNumBits)
+					truePct := float64(bits.OnesCount64(uint64(granted))) * 100 / float64(resolver.bitsTotal)
 					infoStr += fmt.Sprintf("%5.1f%% %-6s ", truePct, requestedPct)
 				case nil:
 					infoStr += "<not specified>  "
@@ -537,16 +520,47 @@ func (raw Config) resolveL3Partitions(conf partitionSet) error {
 	return nil
 }
 
-type l3PartitionAllocation struct {
-	name       string
-	allocation l3Allocation
+// cacheResolver is a helper for resolving exclusive (partition) cache // allocation requests
+type cacheResolver struct {
+	ids        []uint64
+	minBits    uint64
+	bitsTotal  uint64
+	partitions []string
+	requests   map[string]l3Schema
+	grants     map[string]l3Schema
+}
+
+func newCacheResolver(partitions []string) *cacheResolver {
+	r := &cacheResolver{
+		ids:        info.cacheIds,
+		minBits:    info.l3MinCbmBits(),
+		bitsTotal:  uint64(info.l3CbmMask().lsbZero()),
+		partitions: partitions,
+		requests:   make(map[string]l3Schema, len(partitions)),
+		grants:     make(map[string]l3Schema, len(partitions))}
+
+	for _, p := range partitions {
+		r.grants[p] = make(l3Schema, len(r.ids))
+	}
+
+	return r
+}
+
+func (r *cacheResolver) resolve() (map[string]l3Schema, error) {
+	for _, id := range r.ids {
+		err := r.resolveID(id)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return r.grants, nil
 }
 
 // resolveCacheID resolves the partition allocations for one cache id
-func (s partitionSet) resolveCacheID(id uint64, partitions []l3PartitionAllocation) error {
+func (r *cacheResolver) resolveID(id uint64) error {
 	for _, typ := range []l3SchemaType{l3SchemaTypeUnified, l3SchemaTypeCode, l3SchemaTypeData} {
 		log.Debug("resolving partitions for %q schema for cache id %d", typ, id)
-		err := s.resolveCacheIDPerType(id, partitions, typ)
+		err := r.resolveType(id, typ)
 		if err != nil {
 			return err
 		}
@@ -554,29 +568,30 @@ func (s partitionSet) resolveCacheID(id uint64, partitions []l3PartitionAllocati
 	return nil
 }
 
-func (s partitionSet) resolveCacheIDPerType(id uint64, partitions []l3PartitionAllocation, typ l3SchemaType) error {
+// resolveType resolve one schema type for one cache id
+func (r *cacheResolver) resolveType(id uint64, typ l3SchemaType) error {
 	// Sanity check: if any partition has l3 allocation of this schema type
 	// configured check that all other partitions have it, too
-	a := partitions[0].allocation.get(typ)
+	a := r.requests[r.partitions[0]][id].get(typ)
 	isNil := a == nil
-	for _, partition := range partitions {
-		if (partition.allocation.get(typ) == nil) != isNil {
-			return fmt.Errorf("some partition(s) missing l3 %q allocation request for cache id %d", typ, id)
+	for _, partition := range r.partitions {
+		if (r.requests[partition][id].get(typ) == nil) != isNil {
+			return fmt.Errorf("partition %q missing l3 %q allocation request for cache id %d", partition, typ, id)
 		}
 	}
 
 	// Act depending on the type of the first request in the list
 	switch a.(type) {
 	case l3AbsoluteAllocation:
-		return s.resolveCacheIDAbsolute(id, partitions, typ)
+		return r.resolveAbsolute(id, typ)
 	case nil:
 	default:
-		return s.resolveCacheIDRelative(id, partitions, typ)
+		return r.resolveRelative(id, typ)
 	}
 	return nil
 }
 
-func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3PartitionAllocation, typ l3SchemaType) error {
+func (r *cacheResolver) resolveRelative(id uint64, typ l3SchemaType) error {
 	type reqHelper struct {
 		name string
 		req  uint64
@@ -587,12 +602,12 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 	// 2. total allocation requested for this cache id does not exceed 100 percent
 	// Additionally fill a helper structure for sorting partitions
 	percentageTotal := uint64(0)
-	reqs := make([]reqHelper, 0, len(partitions))
-	for _, partition := range partitions {
-		switch a := partition.allocation.get(typ).(type) {
+	reqs := make([]reqHelper, 0, len(r.partitions))
+	for _, partition := range r.partitions {
+		switch a := r.requests[partition][id].get(typ).(type) {
 		case l3PctAllocation:
 			percentageTotal += uint64(a)
-			reqs = append(reqs, reqHelper{name: partition.name, req: uint64(a)})
+			reqs = append(reqs, reqHelper{name: partition, req: uint64(a)})
 		case l3AbsoluteAllocation:
 			return fmt.Errorf("error resolving L3 allocation for cache id %d: mixing relative and absolute allocations between partitions not supported", id)
 		case l3PctRangeAllocation:
@@ -615,16 +630,15 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 	})
 
 	// Calculate number of bits granted each partition.
-	grants := make(map[string]uint64, len(partitions))
-	minCbmBits := info.l3MinCbmBits()
-	bitsTotal := percentageTotal * uint64(info.l3CbmMask().lsbZero()) / 100
+	grants := make(map[string]uint64, len(r.partitions))
+	bitsTotal := percentageTotal * uint64(r.bitsTotal) / 100
 	bitsAvailable := bitsTotal
 	for i, req := range reqs {
 		percentageAvailable := bitsAvailable * percentageTotal / bitsTotal
 
 		// This might happen e.g. if number of partitions would be greater
 		// than the total number of bits
-		if bitsAvailable < minCbmBits {
+		if bitsAvailable < r.minBits {
 			return fmt.Errorf("unable to resolve L3 allocation for cache id %d, not enough exlusive bits available", id)
 		}
 
@@ -633,8 +647,8 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 		numBits := req.req * bitsAvailable / percentageAvailable
 
 		// Guarantee a non-zero allocation
-		if numBits < minCbmBits {
-			numBits = minCbmBits
+		if numBits < r.minBits {
+			numBits = r.minBits
 		}
 		// Don't overflow, allocate all remaining bits to the last partition
 		if numBits > bitsAvailable || i == len(reqs)-1 {
@@ -647,24 +661,24 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 
 	// Construct the actual bitmasks for each partition
 	lsbID := uint64(0)
-	for _, partition := range partitions {
+	for _, partition := range r.partitions {
 		// Compose the actual bitmask
-		v := s[partition.name].L3[id].set(typ, l3AbsoluteAllocation(Bitmask(((1<<grants[partition.name])-1)<<lsbID)))
-		s[partition.name].L3[id] = v
+		v := r.grants[partition][id].set(typ, l3AbsoluteAllocation(Bitmask(((1<<grants[partition])-1)<<lsbID)))
+		r.grants[partition][id] = v
 
-		lsbID += grants[partition.name]
+		lsbID += grants[partition]
 	}
 
 	return nil
 }
 
-func (s partitionSet) resolveCacheIDAbsolute(id uint64, partitions []l3PartitionAllocation, typ l3SchemaType) error {
+func (r *cacheResolver) resolveAbsolute(id uint64, typ l3SchemaType) error {
 	// Just sanity check:
 	// 1. allocation requests of the correct type (absolute)
 	// 2. allocations do not overlap
 	mask := Bitmask(0)
-	for _, partition := range partitions {
-		a, ok := partition.allocation.get(typ).(l3AbsoluteAllocation)
+	for _, partition := range r.partitions {
+		a, ok := r.requests[partition][id].get(typ).(l3AbsoluteAllocation)
 		if !ok {
 			return fmt.Errorf("error resolving L3 allocation for cache id %d: mixing absolute and relative allocations between partitions not supported", id)
 		}
@@ -673,7 +687,7 @@ func (s partitionSet) resolveCacheIDAbsolute(id uint64, partitions []l3Partition
 		}
 		mask |= Bitmask(a)
 
-		s[partition.name].L3[id] = s[partition.name].L3[id].set(typ, a)
+		r.grants[partition][id] = r.grants[partition][id].set(typ, a)
 	}
 
 	return nil
