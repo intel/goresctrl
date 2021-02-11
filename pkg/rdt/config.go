@@ -464,11 +464,12 @@ func (raw Config) resolveL3Partitions(conf partitionSet) error {
 	}
 	sort.Strings(names)
 
+	parser := newCatConfigParser()
 	resolver := newCacheResolver(names)
 
 	// Parse requested allocations from raw config load the resolver
 	for _, name := range names {
-		allocations, err := parseRawL3Allocations(raw.Partitions[name].L3Allocation)
+		allocations, err := parser.parse(raw.Partitions[name].L3Allocation)
 		if err != nil {
 			return fmt.Errorf("failed to parse L3 allocation request for partition %q: %v", name, err)
 		}
@@ -717,6 +718,7 @@ func (raw Config) resolveMBPartitions(conf partitionSet) error {
 func (raw Config) resolveClasses() (classSet, error) {
 	classes := make(classSet)
 
+	catParser := newCatConfigParser()
 	for bname, partition := range raw.Partitions {
 		for gname, class := range partition.Classes {
 			if _, ok := classes[gname]; ok {
@@ -726,7 +728,7 @@ func (raw Config) resolveClasses() (classSet, error) {
 			var err error
 			gc := &classConfig{Partition: bname}
 
-			gc.L3Schema, err = parseRawL3Allocations(class.L3Schema)
+			gc.L3Schema, err = catParser.parse(class.L3Schema)
 			if err != nil {
 				return classes, fmt.Errorf("failed to resolve L3 allocation for class %q: %v", gname, err)
 			}
@@ -749,27 +751,9 @@ func (raw Config) resolveClasses() (classSet, error) {
 	return classes, nil
 }
 
-// parseRawL3Allocations parses a raw L3 cache allocation
-func parseRawL3Allocations(raw interface{}) (l3Schema, error) {
-	rawValues, err := preparseRawAllocations(raw, "100%", false)
-	if err != nil || rawValues == nil {
-		return nil, err
-	}
-
-	allocations := make(l3Schema, len(rawValues))
-	for id, rawVal := range rawValues {
-		allocations[id], err = parseL3Allocation(rawVal)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return allocations, nil
-}
-
 // parseRawMBAllocations parses a raw MB allocation
 func parseRawMBAllocations(raw interface{}) (mbSchema, error) {
-	rawValues, err := preparseRawAllocations(raw, []interface{}{}, false)
+	rawValues, err := preparseRawAllocations(raw, []interface{}{}, info.cacheIds)
 	if err != nil || rawValues == nil {
 		return nil, err
 	}
@@ -791,13 +775,13 @@ func parseRawMBAllocations(raw interface{}) (mbSchema, error) {
 
 // preparseRawAllocations "pre-parses" the rawAllocations per each cache id. I.e. it assigns
 // a raw (string) allocation for each cache id
-func preparseRawAllocations(raw interface{}, defaultVal interface{}, initEmpty bool) (map[uint64]interface{}, error) {
-	if raw == nil && !initEmpty {
+func preparseRawAllocations(raw interface{}, defaultVal interface{}, cacheIds []uint64) (map[uint64]interface{}, error) {
+	if raw == nil {
 		return nil, nil
 	}
 
 	var rawPerCacheId map[string]interface{}
-	allocations := make(map[uint64]interface{}, len(info.cacheIds))
+	allocations := make(map[uint64]interface{}, len(cacheIds))
 
 	switch value := raw.(type) {
 	case string:
@@ -815,7 +799,7 @@ func preparseRawAllocations(raw interface{}, defaultVal interface{}, initEmpty b
 		return allocations, fmt.Errorf("invalid structure of allocation schema '%v' (%T)", raw, raw)
 	}
 
-	for _, i := range info.cacheIds {
+	for _, i := range cacheIds {
 		allocations[i] = defaultVal
 	}
 
@@ -837,14 +821,44 @@ func preparseRawAllocations(raw interface{}, defaultVal interface{}, initEmpty b
 	return allocations, nil
 }
 
-// parseL3Allocation parses a generic string map into l3Allocation struct
-func parseL3Allocation(raw interface{}) (l3Allocation, error) {
+// catConfigParser is a helper for parsing cache allocation from the input config
+type catConfigParser struct {
+	ids     []uint64
+	minBits uint64
+}
+
+func newCatConfigParser() *catConfigParser {
+	return &catConfigParser{
+		ids:     info.cacheIds,
+		minBits: info.l3MinCbmBits()}
+}
+
+// parse parses an L3 cache allocation from the input config
+func (p *catConfigParser) parse(raw interface{}) (l3Schema, error) {
+	rawValues, err := preparseRawAllocations(raw, "100%", info.cacheIds)
+	if err != nil || rawValues == nil {
+		return nil, err
+	}
+
+	allocations := make(l3Schema, len(rawValues))
+	for id, rawVal := range rawValues {
+		allocations[id], err = p.parseSchema(rawVal)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return allocations, nil
+}
+
+// parseSchema parses a generic string or map of strings into l3Allocation struct
+func (p *catConfigParser) parseSchema(raw interface{}) (l3Allocation, error) {
 	var err error
 	allocation := l3Allocation{}
 
 	switch value := raw.(type) {
 	case string:
-		allocation.Unified, err = parseCacheAllocation(value)
+		allocation.Unified, err = p.parseString(value)
 		if err != nil {
 			return allocation, err
 		}
@@ -856,11 +870,11 @@ func parseL3Allocation(raw interface{}) (l3Allocation, error) {
 			}
 			switch strings.ToLower(k) {
 			case string(l3SchemaTypeUnified):
-				allocation.Unified, err = parseCacheAllocation(s)
+				allocation.Unified, err = p.parseString(s)
 			case string(l3SchemaTypeCode):
-				allocation.Code, err = parseCacheAllocation(s)
+				allocation.Code, err = p.parseString(s)
 			case string(l3SchemaTypeData):
-				allocation.Data, err = parseCacheAllocation(s)
+				allocation.Data, err = p.parseString(s)
 			}
 			if err != nil {
 				return allocation, err
@@ -884,8 +898,8 @@ func parseL3Allocation(raw interface{}) (l3Allocation, error) {
 	return allocation, nil
 }
 
-// parseCacheAllocation parses a string value into cacheAllocation type
-func parseCacheAllocation(data string) (cacheAllocation, error) {
+// parseString parses a string value into cacheAllocation type
+func (p *catConfigParser) parseString(data string) (cacheAllocation, error) {
 	if data[len(data)-1] == '%' {
 		// Percentages of the max number of bits
 		split := strings.SplitN(data[0:len(data)-1], "-", 2)
@@ -942,8 +956,8 @@ func parseCacheAllocation(data string) (cacheAllocation, error) {
 	if numOnes != 64-bits.LeadingZeros64(value)-bits.TrailingZeros64(value) {
 		return nil, fmt.Errorf("invalid cache bitmask %q: more than one continuous block of ones", data)
 	}
-	if uint64(numOnes) < info.l3MinCbmBits() {
-		return nil, fmt.Errorf("invalid cache bitmask %q: number of bits less than %d", data, info.l3MinCbmBits())
+	if uint64(numOnes) < p.minBits {
+		return nil, fmt.Errorf("invalid cache bitmask %q: number of bits less than %d", data, p.minBits)
 	}
 
 	return l3AbsoluteAllocation(value), nil

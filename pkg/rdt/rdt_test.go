@@ -1499,67 +1499,71 @@ func TestCacheAllocation(t *testing.T) {
 	}
 }
 
-func TestParseCacheAllocation(t *testing.T) {
+func TestCatConfigParser(t *testing.T) {
+	p := newCatConfigParser()
+	p.minBits = 2
+
 	// Test percentage
-	if a, err := parseCacheAllocation("10%"); err != nil {
+	if a, err := p.parseString("10%"); err != nil {
 		t.Errorf("unexpected error when parsing cache allocation: %v", err)
 	} else if a != l3PctAllocation(10) {
 		t.Errorf("expected 10%% but got %d%%", a)
 	}
-	if _, err := parseCacheAllocation("1a%"); err == nil {
+	if _, err := p.parseString("1a%"); err == nil {
 		t.Errorf("unexpected success when parsing percentage cache allocation")
 	}
-	if _, err := parseCacheAllocation("101%"); err == nil {
+	if _, err := p.parseString("101%"); err == nil {
 		t.Errorf("unexpected success when parsing percentage cache allocation")
 	}
 
 	// Test percentage ranges
-	if a, err := parseCacheAllocation("10-20%"); err != nil {
+	if a, err := p.parseString("10-20%"); err != nil {
 		t.Errorf("unexpected error when parsing cache allocation: %v", err)
 	} else if a != (l3PctRangeAllocation{lowPct: 10, highPct: 20}) {
 		t.Errorf("expected {10 20} but got %v", a)
 	}
-	if _, err := parseCacheAllocation("a-100%"); err == nil {
+	if _, err := p.parseString("a-100%"); err == nil {
 		t.Errorf("unexpected success when parsing percentage range cache allocation")
 	}
-	if _, err := parseCacheAllocation("0-1f%"); err == nil {
+	if _, err := p.parseString("0-1f%"); err == nil {
 		t.Errorf("unexpected success when parsing percentage range cache allocation")
 	}
-	if _, err := parseCacheAllocation("20-10%"); err == nil {
+	if _, err := p.parseString("20-10%"); err == nil {
 		t.Errorf("unexpected success when parsing percentage range cache allocation")
 	}
-	if _, err := parseCacheAllocation("20-101%"); err == nil {
+	if _, err := p.parseString("20-101%"); err == nil {
 		t.Errorf("unexpected success when parsing percentage range cache allocation")
 	}
 
 	// Test bitmask
-	info = &resctrlInfo{}
-	info.l3.minCbmBits = 2
-	if a, err := parseCacheAllocation("0xf0"); err != nil {
+	if a, err := p.parseString("0xf0"); err != nil {
 		t.Errorf("unexpected error when parsing cache allocation: %v", err)
 	} else if a != l3AbsoluteAllocation(0xf0) {
 		t.Errorf("expected 0xf0 but got %#x", a)
 	}
-	if _, err := parseCacheAllocation("0x11"); err == nil {
+	if _, err := p.parseString("0x40"); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
 	}
-	if _, err := parseCacheAllocation("0xg"); err == nil {
+	if _, err := p.parseString("0x11"); err == nil {
+		t.Errorf("unexpected success when parsing bitmask cache allocation")
+	}
+	if _, err := p.parseString("0xg"); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
 	}
 
 	// Test bit numbers
-	if a, err := parseCacheAllocation("3,4,5-7,8"); err != nil {
+	if a, err := p.parseString("3,4,5-7,8"); err != nil {
 		t.Errorf("unexpected error when parsing cache allocation: %v", err)
 	} else if a != l3AbsoluteAllocation(0x1f8) {
 		t.Errorf("expected 0x1f8 but got %#x", a)
 	}
-	if _, err := parseCacheAllocation("3,5"); err == nil {
+	if _, err := p.parseString("3,5"); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
 	}
-	if _, err := parseCacheAllocation("1"); err == nil {
+	if _, err := p.parseString("1"); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
 	}
-	if _, err := parseCacheAllocation("3-x"); err == nil {
+	if _, err := p.parseString("3-x"); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
 	}
 }
