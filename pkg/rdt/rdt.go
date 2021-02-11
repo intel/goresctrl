@@ -523,7 +523,7 @@ func (c *ctrlGroup) GetMonGroups() []MonGroup {
 	return ret
 }
 
-func (c *ctrlGroup) configure(name string, class classConfig,
+func (c *ctrlGroup) configure(name string, class *classConfig,
 	partition *partitionConfig, options Options) error {
 	schemata := ""
 

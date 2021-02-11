@@ -52,7 +52,7 @@ type config struct {
 type partitionSet map[string]*partitionConfig
 
 // classSet represents the pool of rdt classes
-type classSet map[string]classConfig
+type classSet map[string]*classConfig
 
 // partitionConfig is the final configuration of one partition
 type partitionConfig struct {
@@ -724,7 +724,7 @@ func (raw Config) resolveClasses() (classSet, error) {
 			}
 
 			var err error
-			gc := classConfig{Partition: bname}
+			gc := &classConfig{Partition: bname}
 
 			gc.L3Schema, err = parseRawL3Allocations(class.L3Schema)
 			if err != nil {
