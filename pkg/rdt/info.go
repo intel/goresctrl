@@ -252,10 +252,11 @@ func getCacheIds(basepath string) ([]uint64, error) {
 
 	for _, line := range strings.Split(data, "\n") {
 		trimmed := strings.TrimSpace(line)
+		lineSplit := strings.SplitN(trimmed, ":", 2)
 
 		// Find line with L3 or MB schema
-		if strings.HasPrefix(trimmed, "L3") || strings.HasPrefix(trimmed, "MB:") {
-			schema := strings.Split(trimmed[3:], ";")
+		if len(lineSplit) == 2 && (strings.HasPrefix(lineSplit[0], "L3") || strings.HasPrefix(lineSplit[0], "MB")) {
+			schema := strings.Split(lineSplit[1], ";")
 			ids = make([]uint64, len(schema))
 
 			// Get individual cache configurations from the schema
@@ -266,9 +267,7 @@ func getCacheIds(basepath string) ([]uint64, error) {
 				}
 				ids[idx], err = strconv.ParseUint(split[0], 10, 64)
 				if err != nil {
-					if len(split) != 2 {
-						return ids, rdtError("failed to parse cache id in %q: %v", trimmed, err)
-					}
+					return ids, rdtError("failed to parse cache id in %q: %v", trimmed, err)
 				}
 			}
 			return ids, nil
