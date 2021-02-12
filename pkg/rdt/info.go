@@ -33,14 +33,14 @@ type resctrlInfo struct {
 	resctrlMountOpts map[string]struct{}
 	numClosids       uint64
 	cacheIds         []uint64
-	l3               l3Info
-	l3code           l3Info
-	l3data           l3Info
+	l3               catBaseInfo
+	l3code           catBaseInfo
+	l3data           catBaseInfo
 	l3mon            l3MonInfo
 	mb               mbInfo
 }
 
-type l3Info struct {
+type catBaseInfo struct {
 	cbmMask       Bitmask
 	minCbmBits    uint64
 	shareableBits Bitmask
@@ -61,7 +61,7 @@ type mbInfo struct {
 var mountInfoPath string = "/proc/mounts"
 
 // l3Info is a helper method for a "unified API" for getting L3 information
-func (i *resctrlInfo) l3Info() l3Info {
+func (i *resctrlInfo) l3Info() catBaseInfo {
 	switch {
 	case i.l3code.Supported():
 		return i.l3code
@@ -101,7 +101,7 @@ func getRdtInfo() (*resctrlInfo, error) {
 
 	subpath := filepath.Join(infopath, "L3")
 	if _, err = os.Stat(subpath); err == nil {
-		info.l3, info.numClosids, err = getL3Info(subpath)
+		info.l3, info.numClosids, err = getCatInfo(subpath)
 		if err != nil {
 			return info, rdtError("failed to get L3 info from %q: %v", subpath, err)
 		}
@@ -109,7 +109,7 @@ func getRdtInfo() (*resctrlInfo, error) {
 
 	subpath = filepath.Join(infopath, "L3CODE")
 	if _, err = os.Stat(subpath); err == nil {
-		info.l3code, info.numClosids, err = getL3Info(subpath)
+		info.l3code, info.numClosids, err = getCatInfo(subpath)
 		if err != nil {
 			return info, rdtError("failed to get L3CODE info from %q: %v", subpath, err)
 		}
@@ -117,7 +117,7 @@ func getRdtInfo() (*resctrlInfo, error) {
 
 	subpath = filepath.Join(infopath, "L3DATA")
 	if _, err = os.Stat(subpath); err == nil {
-		info.l3data, info.numClosids, err = getL3Info(subpath)
+		info.l3data, info.numClosids, err = getCatInfo(subpath)
 		if err != nil {
 			return info, rdtError("failed to get L3DATA info from %q: %v", subpath, err)
 		}
@@ -147,10 +147,10 @@ func getRdtInfo() (*resctrlInfo, error) {
 	return info, nil
 }
 
-func getL3Info(basepath string) (l3Info, uint64, error) {
+func getCatInfo(basepath string) (catBaseInfo, uint64, error) {
 	var err error
 	var numClosids uint64
-	info := l3Info{}
+	info := catBaseInfo{}
 
 	info.cbmMask, err = readFileBitmask(filepath.Join(basepath, "cbm_mask"))
 	if err != nil {
@@ -173,7 +173,7 @@ func getL3Info(basepath string) (l3Info, uint64, error) {
 }
 
 // Supported returns true if L3 cache allocation has is supported and enabled in the system
-func (i l3Info) Supported() bool {
+func (i catBaseInfo) Supported() bool {
 	return i.cbmMask != 0
 }
 

@@ -530,19 +530,19 @@ func (c *ctrlGroup) configure(name string, class *classConfig,
 	// Handle L3 cache allocation
 	switch {
 	case info.l3.Supported():
-		schema, err := class.L3Schema.ToStr(l3SchemaTypeUnified, partition.L3)
+		schema, err := class.L3Schema.ToStr(catSchemaTypeUnified, partition.L3)
 		if err != nil {
 			return err
 		}
 		schemata += schema
 	case info.l3data.Supported() || info.l3code.Supported():
-		schema, err := class.L3Schema.ToStr(l3SchemaTypeCode, partition.L3)
+		schema, err := class.L3Schema.ToStr(catSchemaTypeCode, partition.L3)
 		if err != nil {
 			return err
 		}
 		schemata += schema
 
-		schema, err = class.L3Schema.ToStr(l3SchemaTypeData, partition.L3)
+		schema, err = class.L3Schema.ToStr(catSchemaTypeData, partition.L3)
 		if err != nil {
 			return err
 		}

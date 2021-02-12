@@ -693,7 +693,7 @@ partitions:
 		TC{
 			name:        "L3 invalid allocation schema #1, invalid shorthand schema (fail)",
 			fs:          "resctrl.nomb",
-			configErrRe: `failed to parse L3 allocation request for partition "part-1": invalid structure of l3Schema`,
+			configErrRe: `failed to parse L3 allocation request for partition "part-1": invalid structure of cache schema`,
 			config: `
 partitions:
   part-1:
@@ -717,7 +717,7 @@ partitions:
 		TC{
 			name:        "L3 invalid allocation schema #3, missing unified (fail)",
 			fs:          "resctrl.nomb",
-			configErrRe: `failed to parse L3 allocation request for partition "part-1": 'unified' not specified in l3Schema`,
+			configErrRe: `failed to parse L3 allocation request for partition "part-1": 'unified' not specified in cache schema`,
 			config: `
 partitions:
   part-1:
@@ -730,7 +730,7 @@ partitions:
 		TC{
 			name:        "L3 invalid allocation schema #4, missing code (fail)",
 			fs:          "resctrl.nomb",
-			configErrRe: `failed to parse L3 allocation request for partition "part-1": 'data' specified but missing 'code' from l3Schema`,
+			configErrRe: `failed to parse L3 allocation request for partition "part-1": 'data' specified but missing 'code' from cache schema`,
 			config: `
 partitions:
   part-1:
@@ -744,7 +744,7 @@ partitions:
 		TC{
 			name:        "L3 invalid allocation schema #5, missing data (fail)",
 			fs:          "resctrl.nomb",
-			configErrRe: `failed to parse L3 allocation request for partition "part-1": 'code' specified but missing 'data' from l3Schema`,
+			configErrRe: `failed to parse L3 allocation request for partition "part-1": 'code' specified but missing 'data' from cache schema`,
 			config: `
 partitions:
   part-1:
@@ -1441,61 +1441,61 @@ func TestCacheAllocation(t *testing.T) {
 	}
 
 	// Test absolute allocation
-	abs := l3AbsoluteAllocation(0x7)
+	abs := catAbsoluteAllocation(0x7)
 	if res, err := abs.Overlay(0xf00); err != nil {
-		t.Errorf("unexpected error when overlaying l3AbsoluteAllocation: %v", err)
+		t.Errorf("unexpected error when overlaying catAbsoluteAllocation: %v", err)
 	} else if res != 0x700 {
-		t.Errorf("expected 0x700 but got %#x when overlaying l3AbsoluteAllocation", res)
+		t.Errorf("expected 0x700 but got %#x when overlaying catAbsoluteAllocation", res)
 	}
 
 	if _, err := abs.Overlay(0); err == nil {
-		t.Errorf("unexpected success when overlaying l3AbsoluteAllocation with empty basemask")
+		t.Errorf("unexpected success when overlaying catAbsoluteAllocation with empty basemask")
 	}
 
 	if _, err := abs.Overlay(0x30); err == nil {
-		t.Errorf("unexpected success when overlaying too wide l3AbsoluteAllocation")
+		t.Errorf("unexpected success when overlaying too wide catAbsoluteAllocation")
 	}
 
 	if _, err := abs.Overlay(0xf0f); err == nil {
-		t.Errorf("unexpected success when overlaying l3AbsoluteAllocation with non-contiguous basemask")
+		t.Errorf("unexpected success when overlaying catAbsoluteAllocation with non-contiguous basemask")
 	}
 
-	if _, err := l3AbsoluteAllocation(0x1).Overlay(0x10); err == nil {
-		t.Errorf("unexpected success when overlaying l3AbsoluteAllocation with too small basemask")
+	if _, err := catAbsoluteAllocation(0x1).Overlay(0x10); err == nil {
+		t.Errorf("unexpected success when overlaying catAbsoluteAllocation with too small basemask")
 	}
 
 	// Test percentage allocation
 	info.l3.minCbmBits = 4
-	if res, err := (l3PctRangeAllocation{lowPct: 0, highPct: 100}).Overlay(0xff00); err != nil {
-		t.Errorf("unexpected error when overlaying l3PctRangeAllocation: %v", err)
+	if res, err := (catPctRangeAllocation{lowPct: 0, highPct: 100}).Overlay(0xff00); err != nil {
+		t.Errorf("unexpected error when overlaying catPctAllocation: %v", err)
 	} else if res != 0xff00 {
-		t.Errorf("expected 0xff00 but got %#x when overlaying l3PctRangeAllocation", res)
+		t.Errorf("expected 0xff00 but got %#x when overlaying catPctAllocation", res)
 	}
-	if res, err := (l3PctRangeAllocation{lowPct: 99, highPct: 100}).Overlay(0xff00); err != nil {
-		t.Errorf("unexpected error when overlaying l3PctRangeAllocation: %v", err)
+	if res, err := (catPctRangeAllocation{lowPct: 99, highPct: 100}).Overlay(0xff00); err != nil {
+		t.Errorf("unexpected error when overlaying catPctAllocation: %v", err)
 	} else if res != 0xf000 {
-		t.Errorf("expected 0xf000 but got %#x when overlaying l3PctRangeAllocation", res)
+		t.Errorf("expected 0xf000 but got %#x when overlaying catPctAllocation", res)
 	}
-	if res, err := (l3PctRangeAllocation{lowPct: 0, highPct: 1}).Overlay(0xff00); err != nil {
-		t.Errorf("unexpected error when overlaying l3PctRangeAllocation: %v", err)
+	if res, err := (catPctRangeAllocation{lowPct: 0, highPct: 1}).Overlay(0xff00); err != nil {
+		t.Errorf("unexpected error when overlaying catPctAllocation: %v", err)
 	} else if res != 0xf00 {
-		t.Errorf("expected 0xf00 but got %#x when overlaying l3PctRangeAllocation", res)
+		t.Errorf("expected 0xf00 but got %#x when overlaying catPctAllocation", res)
 	}
-	if res, err := (l3PctRangeAllocation{lowPct: 20, highPct: 30}).Overlay(0x3ff00); err != nil {
-		t.Errorf("unexpected error when overlaying l3PctRangeAllocation: %v", err)
+	if res, err := (catPctRangeAllocation{lowPct: 20, highPct: 30}).Overlay(0x3ff00); err != nil {
+		t.Errorf("unexpected error when overlaying catPctAllocation: %v", err)
 	} else if res != 0xf00 {
-		t.Errorf("expected 0xf00 but got %#x when overlaying l3PctRangeAllocation", res)
+		t.Errorf("expected 0xf00 but got %#x when overlaying catPctAllocation", res)
 	}
-	if res, err := (l3PctRangeAllocation{lowPct: 30, highPct: 60}).Overlay(0xf00); err != nil {
-		t.Errorf("unexpected error when overlaying l3PctRangeAllocation: %v", err)
+	if res, err := (catPctRangeAllocation{lowPct: 30, highPct: 60}).Overlay(0xf00); err != nil {
+		t.Errorf("unexpected error when overlaying catPctAllocation: %v", err)
 	} else if res != 0xf00 {
-		t.Errorf("expected 0xf00 but got %#x when overlaying l3PctRangeAllocation", res)
+		t.Errorf("expected 0xf00 but got %#x when overlaying catPctAllocation", res)
 	}
-	if _, err := (l3PctRangeAllocation{lowPct: 20, highPct: 10}).Overlay(0xff00); err == nil {
-		t.Errorf("unexpected success when overlaying l3PctRangeAllocation of invalid percentage range")
+	if _, err := (catPctRangeAllocation{lowPct: 20, highPct: 10}).Overlay(0xff00); err == nil {
+		t.Errorf("unexpected success when overlaying catPctAllocation of invalid percentage range")
 	}
-	if _, err := (l3PctRangeAllocation{lowPct: 0, highPct: 100}).Overlay(0); err == nil {
-		t.Errorf("unexpected success when overlaying l3PctRangeAllocation of invalid percentage range")
+	if _, err := (catPctRangeAllocation{lowPct: 0, highPct: 100}).Overlay(0); err == nil {
+		t.Errorf("unexpected success when overlaying catPctAllocation of invalid percentage range")
 	}
 }
 
@@ -1506,7 +1506,7 @@ func TestCatConfigParser(t *testing.T) {
 	// Test percentage
 	if a, err := p.parseString("10%"); err != nil {
 		t.Errorf("unexpected error when parsing cache allocation: %v", err)
-	} else if a != l3PctAllocation(10) {
+	} else if a != catPctAllocation(10) {
 		t.Errorf("expected 10%% but got %d%%", a)
 	}
 	if _, err := p.parseString("1a%"); err == nil {
@@ -1519,7 +1519,7 @@ func TestCatConfigParser(t *testing.T) {
 	// Test percentage ranges
 	if a, err := p.parseString("10-20%"); err != nil {
 		t.Errorf("unexpected error when parsing cache allocation: %v", err)
-	} else if a != (l3PctRangeAllocation{lowPct: 10, highPct: 20}) {
+	} else if a != (catPctRangeAllocation{lowPct: 10, highPct: 20}) {
 		t.Errorf("expected {10 20} but got %v", a)
 	}
 	if _, err := p.parseString("a-100%"); err == nil {
@@ -1538,7 +1538,7 @@ func TestCatConfigParser(t *testing.T) {
 	// Test bitmask
 	if a, err := p.parseString("0xf0"); err != nil {
 		t.Errorf("unexpected error when parsing cache allocation: %v", err)
-	} else if a != l3AbsoluteAllocation(0xf0) {
+	} else if a != catAbsoluteAllocation(0xf0) {
 		t.Errorf("expected 0xf0 but got %#x", a)
 	}
 	if _, err := p.parseString("0x40"); err == nil {
@@ -1554,7 +1554,7 @@ func TestCatConfigParser(t *testing.T) {
 	// Test bit numbers
 	if a, err := p.parseString("3,4,5-7,8"); err != nil {
 		t.Errorf("unexpected error when parsing cache allocation: %v", err)
-	} else if a != l3AbsoluteAllocation(0x1f8) {
+	} else if a != catAbsoluteAllocation(0x1f8) {
 		t.Errorf("expected 0x1f8 but got %#x", a)
 	}
 	if _, err := p.parseString("3,5"); err == nil {
