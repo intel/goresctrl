@@ -431,6 +431,9 @@ partitions:
 // TestConfig tests configuration parsing and resolving
 func TestConfig(t *testing.T) {
 	type Schemata struct {
+		l2     string
+		l2code string
+		l2data string
 		l3     string
 		l3code string
 		l3data string
@@ -954,7 +957,7 @@ partitions:
 		TC{
 			name:        "L3 missing for one partition (fail)",
 			fs:          "resctrl.full",
-			configErrRe: `invalid configuration: partition "part-2" missing l3 "unified" allocation request`,
+			configErrRe: `invalid configuration: partition "part-2" missing L3 "unified" allocation request`,
 			config: `
 partitions:
   part-1:
@@ -979,7 +982,7 @@ partitions:
 		TC{
 			name:        "L3 missing cdp (fail)",
 			fs:          "resctrl.nomb",
-			configErrRe: `partition "part-2" missing l3 "code" allocation request for cache id [0-3]`,
+			configErrRe: `partition "part-2" missing L3 "code" allocation request for cache id [0-3]`,
 			config: `
 partitions:
   part-1:
@@ -1114,6 +1117,131 @@ partitions:
 		},
 		// Testcase
 		TC{
+			name: "L2, partial allocation",
+			fs:   "resctrl.l2",
+			config: `
+partitions:
+  part-1:
+    l2Allocation:
+      all: 30%
+      1: 75%
+    classes:
+      class-1:
+  part-2:
+    l2Allocation:
+      0: 30%
+      1:
+        unified: 20%
+    classes:
+      class-2:
+  part-3:
+    l2Allocation:
+      0: 40%
+      1: 5%
+    classes:
+      SYSTEM_DEFAULT:
+`,
+			schemata: map[string]Schemata{
+				"class-1": Schemata{
+					l2: "0=3;1=3f",
+				},
+				"class-2": Schemata{
+					l2: "0=c;1=40",
+				},
+				"SYSTEM_DEFAULT": Schemata{
+					l2: "0=f0;1=80",
+				},
+			},
+		},
+		// Testcase
+		TC{
+			name: "L2 CDP",
+			fs:   "resctrl.l2cdp",
+			config: `
+partitions:
+  part-1:
+    l2Allocation:
+      all: 42%
+      2:
+        unified: 30%
+        code: 20%
+        data: 50%
+      3:
+        unified: 30%
+        code: 40%
+        data: 50%
+    l3Allocation: 30%
+    classes:
+      class-1:
+  part-2:
+    l2Allocation:
+      all: 43%
+      2:
+        unified: 70%
+        code: 40%
+        data: 30%
+      3:
+        unified: 30%
+        code: 60%
+        data: 50%
+    l3Allocation: 50%
+    classes:
+      class-2:
+        l2Schema:
+          all: 80%
+          2:
+            unified: 80%
+            code: 60%
+            data: 90%
+      SYSTEM_DEFAULT:
+        l3Schema: 60%
+
+`,
+			schemata: map[string]Schemata{
+				"class-1": Schemata{
+					l2code: "0=ff;1=ff;2=f;3=ff",
+					l2data: "0=ff;1=ff;2=3ff;3=3ff",
+					l3:     "0=7",
+				},
+				"class-2": Schemata{
+					l2code: "0=ff00;1=ff00;2=1f0;3=3ff00",
+					l2data: "0=ff00;1=ff00;2=fc00;3=3fc00",
+					l3:     "0=1f8",
+				},
+				"SYSTEM_DEFAULT": Schemata{
+					l2code: "0=1ff00;1=1ff00;2=ff0;3=fff00",
+					l2data: "0=1ff00;1=1ff00;2=fc00;3=ffc00",
+					l3:     "0=78",
+				},
+			},
+		},
+		// Testcase
+		TC{
+			name: "L2 optional",
+			fs:   "resctrl.nomb",
+			config: `
+options:
+  l2:
+    optional: true
+partitions:
+  part-1:
+    l2Allocation: 50%
+    l3Allocation: 50%
+    classes:
+      class-1:
+        l2schema: 20%
+`,
+			schemata: map[string]Schemata{
+				"class-1": Schemata{
+					l3: "0=3ff;1=3ff;2=3ff;3=3ff",
+				},
+				"SYSTEM_DEFAULT": Schemata{
+					l3: "0=fffff;1=fffff;2=fffff;3=fffff",
+				},
+			},
+		},
+		// Testcase
+		TC{
 			name:        "MB nan percentage value in partition (fail)",
 			fs:          "resctrl.nol3",
 			configErrRe: `failed to resolve MB allocation for partition "part-1": strconv.ParseUint: parsing "xyz"`,
@@ -1237,6 +1365,15 @@ partitions:
 	verifySchemata := func(tc *TC) {
 		for n, s := range tc.schemata {
 			expected := ""
+			if s.l2 != "" {
+				expected += "L2:" + s.l2 + "\n"
+			}
+			if s.l2code != "" {
+				expected += "L2CODE:" + s.l2code + "\n"
+			}
+			if s.l2data != "" {
+				expected += "L2DATA:" + s.l2data + "\n"
+			}
 			if s.l3 != "" {
 				expected += "L3:" + s.l3 + "\n"
 			}
@@ -1442,67 +1579,64 @@ func TestCacheAllocation(t *testing.T) {
 
 	// Test absolute allocation
 	abs := catAbsoluteAllocation(0x7)
-	if res, err := abs.Overlay(0xf00); err != nil {
+	if res, err := abs.Overlay(0xf00, 1); err != nil {
 		t.Errorf("unexpected error when overlaying catAbsoluteAllocation: %v", err)
 	} else if res != 0x700 {
 		t.Errorf("expected 0x700 but got %#x when overlaying catAbsoluteAllocation", res)
 	}
 
-	if _, err := abs.Overlay(0); err == nil {
+	if _, err := abs.Overlay(0, 1); err == nil {
 		t.Errorf("unexpected success when overlaying catAbsoluteAllocation with empty basemask")
 	}
 
-	if _, err := abs.Overlay(0x30); err == nil {
+	if _, err := abs.Overlay(0x30, 1); err == nil {
 		t.Errorf("unexpected success when overlaying too wide catAbsoluteAllocation")
 	}
 
-	if _, err := abs.Overlay(0xf0f); err == nil {
+	if _, err := abs.Overlay(0xf0f, 1); err == nil {
 		t.Errorf("unexpected success when overlaying catAbsoluteAllocation with non-contiguous basemask")
 	}
 
-	if _, err := catAbsoluteAllocation(0x1).Overlay(0x10); err == nil {
+	if _, err := catAbsoluteAllocation(0x1).Overlay(0x10, 2); err == nil {
 		t.Errorf("unexpected success when overlaying catAbsoluteAllocation with too small basemask")
 	}
 
 	// Test percentage allocation
-	catl3 := info.cat[L3]
-	catl3.unified.minCbmBits = 4
-	info.cat[L3] = catl3
-	if res, err := (catPctRangeAllocation{lowPct: 0, highPct: 100}).Overlay(0xff00); err != nil {
+	if res, err := (catPctRangeAllocation{lowPct: 0, highPct: 100}).Overlay(0xff00, 4); err != nil {
 		t.Errorf("unexpected error when overlaying catPctAllocation: %v", err)
 	} else if res != 0xff00 {
 		t.Errorf("expected 0xff00 but got %#x when overlaying catPctAllocation", res)
 	}
-	if res, err := (catPctRangeAllocation{lowPct: 99, highPct: 100}).Overlay(0xff00); err != nil {
+	if res, err := (catPctRangeAllocation{lowPct: 99, highPct: 100}).Overlay(0xff00, 4); err != nil {
 		t.Errorf("unexpected error when overlaying catPctAllocation: %v", err)
 	} else if res != 0xf000 {
 		t.Errorf("expected 0xf000 but got %#x when overlaying catPctAllocation", res)
 	}
-	if res, err := (catPctRangeAllocation{lowPct: 0, highPct: 1}).Overlay(0xff00); err != nil {
+	if res, err := (catPctRangeAllocation{lowPct: 0, highPct: 1}).Overlay(0xff00, 4); err != nil {
 		t.Errorf("unexpected error when overlaying catPctAllocation: %v", err)
 	} else if res != 0xf00 {
 		t.Errorf("expected 0xf00 but got %#x when overlaying catPctAllocation", res)
 	}
-	if res, err := (catPctRangeAllocation{lowPct: 20, highPct: 30}).Overlay(0x3ff00); err != nil {
+	if res, err := (catPctRangeAllocation{lowPct: 20, highPct: 30}).Overlay(0x3ff00, 4); err != nil {
 		t.Errorf("unexpected error when overlaying catPctAllocation: %v", err)
 	} else if res != 0xf00 {
 		t.Errorf("expected 0xf00 but got %#x when overlaying catPctAllocation", res)
 	}
-	if res, err := (catPctRangeAllocation{lowPct: 30, highPct: 60}).Overlay(0xf00); err != nil {
+	if res, err := (catPctRangeAllocation{lowPct: 30, highPct: 60}).Overlay(0xf00, 4); err != nil {
 		t.Errorf("unexpected error when overlaying catPctAllocation: %v", err)
 	} else if res != 0xf00 {
 		t.Errorf("expected 0xf00 but got %#x when overlaying catPctAllocation", res)
 	}
-	if _, err := (catPctRangeAllocation{lowPct: 20, highPct: 10}).Overlay(0xff00); err == nil {
+	if _, err := (catPctRangeAllocation{lowPct: 20, highPct: 10}).Overlay(0xff00, 4); err == nil {
 		t.Errorf("unexpected success when overlaying catPctAllocation of invalid percentage range")
 	}
-	if _, err := (catPctRangeAllocation{lowPct: 0, highPct: 100}).Overlay(0); err == nil {
+	if _, err := (catPctRangeAllocation{lowPct: 0, highPct: 100}).Overlay(0, 4); err == nil {
 		t.Errorf("unexpected success when overlaying catPctAllocation of invalid percentage range")
 	}
 }
 
 func TestCatConfigParser(t *testing.T) {
-	p := newCatConfigParser()
+	p := newCatConfigParser(L3)
 	p.minBits = 2
 
 	// Test percentage

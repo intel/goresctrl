@@ -528,28 +528,30 @@ func (c *ctrlGroup) configure(name string, class *classConfig,
 	schemata := ""
 
 	// Handle cache allocation
-	switch {
-	case info.cat[L3].unified.Supported():
-		schema, err := class.CATSchema[L3].ToStr(catSchemaTypeUnified, partition.CAT[L3])
-		if err != nil {
-			return err
-		}
-		schemata += schema
-	case info.cat[L3].data.Supported() || info.cat[L3].code.Supported():
-		schema, err := class.CATSchema[L3].ToStr(catSchemaTypeCode, partition.CAT[L3])
-		if err != nil {
-			return err
-		}
-		schemata += schema
+	for _, lvl := range []cacheLevel{L2, L3} {
+		switch {
+		case info.cat[lvl].unified.Supported():
+			schema, err := class.CATSchema[lvl].ToStr(catSchemaTypeUnified, partition.CAT[lvl])
+			if err != nil {
+				return err
+			}
+			schemata += schema
+		case info.cat[lvl].data.Supported() || info.cat[lvl].code.Supported():
+			schema, err := class.CATSchema[lvl].ToStr(catSchemaTypeCode, partition.CAT[lvl])
+			if err != nil {
+				return err
+			}
+			schemata += schema
 
-		schema, err = class.CATSchema[L3].ToStr(catSchemaTypeData, partition.CAT[L3])
-		if err != nil {
-			return err
-		}
-		schemata += schema
-	default:
-		if class.CATSchema[L3] != nil && !options.Cat(L3).Optional {
-			return rdtError("L3 cache allocation for %q specified in configuration but not supported by system", name)
+			schema, err = class.CATSchema[lvl].ToStr(catSchemaTypeData, partition.CAT[lvl])
+			if err != nil {
+				return err
+			}
+			schemata += schema
+		default:
+			if class.CATSchema[lvl].Alloc != nil && !options.Cat(lvl).Optional {
+				return rdtError("%s cache allocation for %q specified in configuration but not supported by system", lvl, name)
+			}
 		}
 	}
 

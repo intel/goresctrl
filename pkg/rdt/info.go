@@ -111,40 +111,35 @@ func getRdtInfo() (*resctrlInfo, error) {
 		return info, rdtError("failed to read RDT info from %q: %v", infopath, err)
 	}
 
-	cat := catInfoAll{}
-	subpath := filepath.Join(infopath, "L3")
-	if _, err = os.Stat(subpath); err == nil {
-		cat.unified, info.numClosids, err = getCatInfo(subpath)
-		if err != nil {
-			return info, rdtError("failed to get L3 info from %q: %v", subpath, err)
+	// Check CAT feature available
+	for _, cl := range []cacheLevel{L2, L3} {
+		cat := catInfoAll{}
+		catFeatures := map[string]*catInfo{
+			"":     &cat.unified,
+			"CODE": &cat.code,
+			"DATA": &cat.data,
 		}
+		for suffix, i := range catFeatures {
+			dir := string(cl) + suffix
+			subpath := filepath.Join(infopath, dir)
+			if _, err = os.Stat(subpath); err == nil {
+				*i, info.numClosids, err = getCatInfo(subpath)
+				if err != nil {
+					return info, rdtError("failed to get %s info from %q: %v", dir, subpath, err)
+				}
+			}
+		}
+		if cat.getInfo().Supported() {
+			cat.cacheIds, err = getCacheIds(info.resctrlPath, string(cl))
+			if err != nil {
+				return info, rdtError("failed to get %s CAT cache IDs: %v", cl, err)
+			}
+		}
+		info.cat[cl] = cat
 	}
 
-	subpath = filepath.Join(infopath, "L3CODE")
-	if _, err = os.Stat(subpath); err == nil {
-		cat.code, info.numClosids, err = getCatInfo(subpath)
-		if err != nil {
-			return info, rdtError("failed to get L3CODE info from %q: %v", subpath, err)
-		}
-	}
-
-	subpath = filepath.Join(infopath, "L3DATA")
-	if _, err = os.Stat(subpath); err == nil {
-		cat.data, info.numClosids, err = getCatInfo(subpath)
-		if err != nil {
-			return info, rdtError("failed to get L3DATA info from %q: %v", subpath, err)
-		}
-	}
-
-	if cat.getInfo().Supported() {
-		cat.cacheIds, err = getCacheIds(info.resctrlPath, "L3")
-		if err != nil {
-			return info, rdtError("failed to get L3 CAT cache IDs: %v", err)
-		}
-	}
-	info.cat[L3] = cat
-
-	subpath = filepath.Join(infopath, "L3_MON")
+	// Check MON features available
+	subpath := filepath.Join(infopath, "L3_MON")
 	if _, err = os.Stat(subpath); err == nil {
 		info.l3mon, err = getL3MonInfo(subpath)
 		if err != nil {
@@ -152,6 +147,7 @@ func getRdtInfo() (*resctrlInfo, error) {
 		}
 	}
 
+	// Check MBA feature available
 	subpath = filepath.Join(infopath, "MB")
 	if _, err = os.Stat(subpath); err == nil {
 		info.mb, info.numClosids, err = getMBInfo(subpath)
@@ -275,7 +271,7 @@ func getCacheIds(basepath string, prefix string) ([]uint64, error) {
 		trimmed := strings.TrimSpace(line)
 		lineSplit := strings.SplitN(trimmed, ":", 2)
 
-		// Find line with L3 or MB schema
+		// Find line with given resource prefix
 		if len(lineSplit) == 2 && strings.HasPrefix(lineSplit[0], prefix) {
 			schema := strings.Split(lineSplit[1], ";")
 			ids = make([]uint64, len(schema))
