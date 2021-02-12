@@ -32,7 +32,6 @@ type resctrlInfo struct {
 	resctrlPath      string
 	resctrlMountOpts map[string]struct{}
 	numClosids       uint64
-	cacheIds         []uint64
 	cat              map[cacheLevel]catInfoAll
 	l3mon            l3MonInfo
 	mb               mbInfo
@@ -46,9 +45,10 @@ const (
 )
 
 type catInfoAll struct {
-	unified catInfo
-	code    catInfo
-	data    catInfo
+	cacheIds []uint64
+	unified  catInfo
+	code     catInfo
+	data     catInfo
 }
 
 type catInfo struct {
@@ -63,6 +63,7 @@ type l3MonInfo struct {
 }
 
 type mbInfo struct {
+	cacheIds      []uint64
 	bandwidthGran uint64
 	delayLinear   uint64
 	minBandwidth  uint64
@@ -134,6 +135,13 @@ func getRdtInfo() (*resctrlInfo, error) {
 			return info, rdtError("failed to get L3DATA info from %q: %v", subpath, err)
 		}
 	}
+
+	if cat.getInfo().Supported() {
+		cat.cacheIds, err = getCacheIds(info.resctrlPath, "L3")
+		if err != nil {
+			return info, rdtError("failed to get L3 CAT cache IDs: %v", err)
+		}
+	}
 	info.cat[L3] = cat
 
 	subpath = filepath.Join(infopath, "L3_MON")
@@ -150,11 +158,11 @@ func getRdtInfo() (*resctrlInfo, error) {
 		if err != nil {
 			return info, rdtError("failed to get MBA info from %q: %v", subpath, err)
 		}
-	}
 
-	info.cacheIds, err = getCacheIds(info.resctrlPath)
-	if err != nil {
-		return info, rdtError("failed to get cache IDs: %v", err)
+		info.mb.cacheIds, err = getCacheIds(info.resctrlPath, "MB")
+		if err != nil {
+			return info, rdtError("failed to get MBA cache IDs: %v", err)
+		}
 	}
 
 	return info, nil
@@ -254,7 +262,7 @@ func (i mbInfo) Supported() bool {
 	return i.minBandwidth != 0
 }
 
-func getCacheIds(basepath string) ([]uint64, error) {
+func getCacheIds(basepath string, prefix string) ([]uint64, error) {
 	var ids []uint64
 
 	// Parse cache IDs from the root schemata
@@ -268,7 +276,7 @@ func getCacheIds(basepath string) ([]uint64, error) {
 		lineSplit := strings.SplitN(trimmed, ":", 2)
 
 		// Find line with L3 or MB schema
-		if len(lineSplit) == 2 && (strings.HasPrefix(lineSplit[0], "L3") || strings.HasPrefix(lineSplit[0], "MB")) {
+		if len(lineSplit) == 2 && strings.HasPrefix(lineSplit[0], prefix) {
 			schema := strings.Split(lineSplit[1], ";")
 			ids = make([]uint64, len(schema))
 
@@ -276,7 +284,7 @@ func getCacheIds(basepath string) ([]uint64, error) {
 			for idx, definition := range schema {
 				split := strings.Split(definition, "=")
 				if len(split) != 2 {
-					return ids, rdtError("looks like an invalid L3 %q", trimmed)
+					return ids, rdtError("looks like an invalid schema %q", trimmed)
 				}
 				ids[idx], err = strconv.ParseUint(split[0], 10, 64)
 				if err != nil {
@@ -286,7 +294,7 @@ func getCacheIds(basepath string) ([]uint64, error) {
 			return ids, nil
 		}
 	}
-	return ids, rdtError("no resources in root schemata")
+	return ids, rdtError("no %s resources in root schemata", prefix)
 }
 
 func getResctrlMountInfo() (string, map[string]struct{}, error) {

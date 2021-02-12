@@ -434,10 +434,9 @@ func (raw Config) resolve() (config, error) {
 func (raw Config) resolvePartitions() (partitionSet, error) {
 	// Initialize empty partition configuration
 	conf := make(partitionSet, len(raw.Partitions))
-	numCacheIds := len(info.cacheIds)
 	for name := range raw.Partitions {
-		conf[name] = &partitionConfig{L3: make(catSchema, numCacheIds),
-			MB: make(mbSchema, numCacheIds)}
+		conf[name] = &partitionConfig{L3: make(catSchema, len(info.cat[L3].cacheIds)),
+			MB: make(mbSchema, len(info.mb.cacheIds))}
 	}
 
 	// Try to resolve L3 partition allocations
@@ -533,7 +532,7 @@ type cacheResolver struct {
 
 func newCacheResolver(partitions []string) *cacheResolver {
 	r := &cacheResolver{
-		ids:        info.cacheIds,
+		ids:        info.cat[L3].cacheIds,
 		minBits:    info.cat[L3].minCbmBits(),
 		bitsTotal:  uint64(info.cat[L3].cbmMask().lsbZero()),
 		partitions: partitions,
@@ -753,7 +752,7 @@ func (raw Config) resolveClasses() (classSet, error) {
 
 // parseRawMBAllocations parses a raw MB allocation
 func parseRawMBAllocations(raw interface{}) (mbSchema, error) {
-	rawValues, err := preparseRawAllocations(raw, []interface{}{}, info.cacheIds)
+	rawValues, err := preparseRawAllocations(raw, []interface{}{}, info.mb.cacheIds)
 	if err != nil || rawValues == nil {
 		return nil, err
 	}
@@ -829,13 +828,13 @@ type catConfigParser struct {
 
 func newCatConfigParser() *catConfigParser {
 	return &catConfigParser{
-		ids:     info.cacheIds,
+		ids:     info.cat[L3].cacheIds,
 		minBits: info.cat[L3].minCbmBits()}
 }
 
 // parse parses an L3 cache allocation from the input config
 func (p *catConfigParser) parse(raw interface{}) (catSchema, error) {
-	rawValues, err := preparseRawAllocations(raw, "100%", info.cacheIds)
+	rawValues, err := preparseRawAllocations(raw, "100%", p.ids)
 	if err != nil || rawValues == nil {
 		return nil, err
 	}
