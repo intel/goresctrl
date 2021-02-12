@@ -272,8 +272,8 @@ func (a catPctRangeAllocation) Overlay(baseMask Bitmask) (Bitmask, error) {
 
 	// Make sure the number of bits set satisfies the minimum requirement
 	numBits := msb - lsb + 1
-	if numBits < info.l3MinCbmBits() {
-		gap := info.l3MinCbmBits() - numBits
+	if numBits < info.cat[L3].minCbmBits() {
+		gap := info.cat[L3].minCbmBits() - numBits
 
 		// First, widen the mask from the "lsb end"
 		if gap <= lsb {
@@ -308,8 +308,8 @@ func verifyCatBaseMask(baseMask Bitmask) error {
 	if bits.OnesCount64(uint64(baseMask)) != baseMaskWidth {
 		return fmt.Errorf("invalid basemask %#x: more than one block of bits set", baseMask)
 	}
-	if uint64(bits.OnesCount64(uint64(baseMask))) < info.l3MinCbmBits() {
-		return fmt.Errorf("invalid basemask %#x: fewer than %d bits set", baseMask, info.l3MinCbmBits())
+	if uint64(bits.OnesCount64(uint64(baseMask))) < info.cat[L3].minCbmBits() {
+		return fmt.Errorf("invalid basemask %#x: fewer than %d bits set", baseMask, info.cat[L3].minCbmBits())
 	}
 
 	return nil
@@ -534,8 +534,8 @@ type cacheResolver struct {
 func newCacheResolver(partitions []string) *cacheResolver {
 	r := &cacheResolver{
 		ids:        info.cacheIds,
-		minBits:    info.l3MinCbmBits(),
-		bitsTotal:  uint64(info.l3CbmMask().lsbZero()),
+		minBits:    info.cat[L3].minCbmBits(),
+		bitsTotal:  uint64(info.cat[L3].cbmMask().lsbZero()),
 		partitions: partitions,
 		requests:   make(map[string]catSchema, len(partitions)),
 		grants:     make(map[string]catSchema, len(partitions))}
@@ -630,7 +630,7 @@ func (r *cacheResolver) resolveRelative(id uint64, typ catSchemaType) error {
 		return reqs[i].req < reqs[j].req
 	})
 
-	// Calculate number of bits granted each partition.
+	// Calculate number of bits granted to each partition.
 	grants := make(map[string]uint64, len(r.partitions))
 	bitsTotal := percentageTotal * uint64(r.bitsTotal) / 100
 	bitsAvailable := bitsTotal
@@ -830,7 +830,7 @@ type catConfigParser struct {
 func newCatConfigParser() *catConfigParser {
 	return &catConfigParser{
 		ids:     info.cacheIds,
-		minBits: info.l3MinCbmBits()}
+		minBits: info.cat[L3].minCbmBits()}
 }
 
 // parse parses an L3 cache allocation from the input config

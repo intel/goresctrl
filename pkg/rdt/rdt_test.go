@@ -1465,7 +1465,9 @@ func TestCacheAllocation(t *testing.T) {
 	}
 
 	// Test percentage allocation
-	info.l3.minCbmBits = 4
+	catl3 := info.cat[L3]
+	catl3.unified.minCbmBits = 4
+	info.cat[L3] = catl3
 	if res, err := (catPctRangeAllocation{lowPct: 0, highPct: 100}).Overlay(0xff00); err != nil {
 		t.Errorf("unexpected error when overlaying catPctAllocation: %v", err)
 	} else if res != 0xff00 {
