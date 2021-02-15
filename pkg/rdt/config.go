@@ -56,15 +56,15 @@ type classSet map[string]*classConfig
 
 // partitionConfig is the final configuration of one partition
 type partitionConfig struct {
-	L3 catSchema
-	MB mbSchema
+	CAT map[cacheLevel]catSchema
+	MB  mbSchema
 }
 
 // classConfig represents configuration of one class, i.e. one CTRL group in
 // the Linux resctrl interface
 type classConfig struct {
 	Partition string
-	L3Schema  catSchema
+	CATSchema map[cacheLevel]catSchema
 	MBSchema  mbSchema
 }
 
@@ -128,6 +128,14 @@ const (
 	// catSchemaTypeData is the 'data' part of CDP schema
 	catSchemaTypeData catSchemaType = "data"
 )
+
+func (o Options) Cat(lvl cacheLevel) catOptions {
+	switch lvl {
+	case L3:
+		return o.L3
+	}
+	return catOptions{}
+}
 
 func (t catSchemaType) ToResctrlStr() string {
 	if t == catSchemaTypeUnified {
@@ -435,7 +443,10 @@ func (raw Config) resolvePartitions() (partitionSet, error) {
 	// Initialize empty partition configuration
 	conf := make(partitionSet, len(raw.Partitions))
 	for name := range raw.Partitions {
-		conf[name] = &partitionConfig{L3: make(catSchema, len(info.cat[L3].cacheIds)),
+		conf[name] = &partitionConfig{
+			CAT: map[cacheLevel]catSchema{
+				L3: make(catSchema, len(info.cat[L3].cacheIds)),
+			},
 			MB: make(mbSchema, len(info.mb.cacheIds))}
 	}
 
@@ -487,7 +498,7 @@ func (raw Config) resolveL3Partitions(conf partitionSet) error {
 	}
 
 	for name, grant := range grants {
-		conf[name].L3 = grant
+		conf[name].CAT[L3] = grant
 	}
 
 	log.Info("actual (and requested) L3 allocations per partition and cache id:")
@@ -725,13 +736,14 @@ func (raw Config) resolveClasses() (classSet, error) {
 			}
 
 			var err error
-			gc := &classConfig{Partition: bname}
+			gc := &classConfig{Partition: bname,
+				CATSchema: make(map[cacheLevel]catSchema)}
 
-			gc.L3Schema, err = catParser.parse(class.L3Schema)
+			gc.CATSchema[L3], err = catParser.parse(class.L3Schema)
 			if err != nil {
 				return classes, fmt.Errorf("failed to resolve L3 allocation for class %q: %v", gname, err)
 			}
-			if gc.L3Schema != nil && partition.L3Allocation == nil {
+			if gc.CATSchema[L3] != nil && partition.L3Allocation == nil {
 				return classes, fmt.Errorf("L3 allocation missing from partition %q but class %q specifies L3 schema", bname, gname)
 			}
 

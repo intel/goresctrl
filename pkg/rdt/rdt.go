@@ -527,28 +527,28 @@ func (c *ctrlGroup) configure(name string, class *classConfig,
 	partition *partitionConfig, options Options) error {
 	schemata := ""
 
-	// Handle L3 cache allocation
+	// Handle cache allocation
 	switch {
 	case info.cat[L3].unified.Supported():
-		schema, err := class.L3Schema.ToStr(catSchemaTypeUnified, partition.L3)
+		schema, err := class.CATSchema[L3].ToStr(catSchemaTypeUnified, partition.CAT[L3])
 		if err != nil {
 			return err
 		}
 		schemata += schema
 	case info.cat[L3].data.Supported() || info.cat[L3].code.Supported():
-		schema, err := class.L3Schema.ToStr(catSchemaTypeCode, partition.L3)
+		schema, err := class.CATSchema[L3].ToStr(catSchemaTypeCode, partition.CAT[L3])
 		if err != nil {
 			return err
 		}
 		schemata += schema
 
-		schema, err = class.L3Schema.ToStr(catSchemaTypeData, partition.L3)
+		schema, err = class.CATSchema[L3].ToStr(catSchemaTypeData, partition.CAT[L3])
 		if err != nil {
 			return err
 		}
 		schemata += schema
 	default:
-		if class.L3Schema != nil && !options.L3.Optional {
+		if class.CATSchema[L3] != nil && !options.Cat(L3).Optional {
 			return rdtError("L3 cache allocation for %q specified in configuration but not supported by system", name)
 		}
 	}
