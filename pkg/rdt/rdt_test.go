@@ -873,16 +873,27 @@ partitions:
 partitions:
   part-1:
     l3Allocation:
-      all: "20%"
-      1: "40%"
-      2: "60%"
-      3: "80%"
+      all: "21%"
+      1: "42%"
+      2: "63%"
+      3: "89%"
     classes:
       class-1:
+  part-2:
+    l3Allocation:
+      all: "29%"
+      1: "8%"
+      2: "19%"
+      3: "11%"
+    classes:
+      class-2:
 `,
 			schemata: map[string]Schemata{
 				"class-1": Schemata{
-					l3: "0=f;1=ff;2=fff;3=ffff",
+					l3: "0=f;1=ff;2=1fff;3=3ffff",
+				},
+				"class-2": Schemata{
+					l3: "0=3f0;1=300;2=e000;3=c0000",
 				},
 				"SYSTEM_DEFAULT": Schemata{
 					l3: "0=fffff;1=fffff;2=fffff;3=fffff",
