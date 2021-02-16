@@ -586,12 +586,12 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 	// 1. allocation requests are of the same type (relative)
 	// 2. total allocation requested for this cache id does not exceed 100 percent
 	// Additionally fill a helper structure for sorting partitions
-	total := uint64(0)
+	percentageTotal := uint64(0)
 	reqs := make([]reqHelper, 0, len(partitions))
 	for _, partition := range partitions {
 		switch a := partition.allocation.get(typ).(type) {
 		case l3PctAllocation:
-			total += uint64(a)
+			percentageTotal += uint64(a)
 			reqs = append(reqs, reqHelper{name: partition.name, req: uint64(a)})
 		case l3AbsoluteAllocation:
 			return fmt.Errorf("error resolving L3 allocation for cache id %d: mixing relative and absolute allocations between partitions not supported", id)
@@ -601,10 +601,10 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 			return fmt.Errorf("BUG: unknown cacheAllocation type %T", a)
 		}
 	}
-	if total < 100 {
-		log.Info("requested total L3 %q partition allocation for cache id %d <100%% (%d%%)", typ, id, total)
-	} else if total > 100 {
-		return fmt.Errorf("accumulated L3 %q partition allocation requests for cache id %d exceeds 100%% (%d%%)", typ, id, total)
+	if percentageTotal < 100 {
+		log.Info("requested total L3 %q partition allocation for cache id %d <100%% (%d%%)", typ, id, percentageTotal)
+	} else if percentageTotal > 100 {
+		return fmt.Errorf("accumulated L3 %q partition allocation requests for cache id %d exceeds 100%% (%d%%)", typ, id, percentageTotal)
 	}
 
 	// Sort partition allocations. We want to resolve smallest allocations
@@ -617,10 +617,10 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 	// Calculate number of bits granted each partition.
 	grants := make(map[string]uint64, len(partitions))
 	minCbmBits := info.l3MinCbmBits()
-	bitsTotal := uint64(info.l3CbmMask().lsbZero())
+	bitsTotal := percentageTotal * uint64(info.l3CbmMask().lsbZero()) / 100
 	bitsAvailable := bitsTotal
-	for _, req := range reqs {
-		percentageAvailable := bitsAvailable * 100 / bitsTotal
+	for i, req := range reqs {
+		percentageAvailable := bitsAvailable * percentageTotal / bitsTotal
 
 		// This might happen e.g. if number of partitions would be greater
 		// than the total number of bits
@@ -636,8 +636,8 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 		if numBits < minCbmBits {
 			numBits = minCbmBits
 		}
-		// Don't overflow
-		if numBits > bitsAvailable {
+		// Don't overflow, allocate all remaining bits to the last partition
+		if numBits > bitsAvailable || i == len(reqs)-1 {
 			numBits = bitsAvailable
 		}
 
