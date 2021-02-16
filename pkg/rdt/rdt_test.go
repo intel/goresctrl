@@ -222,6 +222,9 @@ partitions:
 	if err := cls.AddPids("99"); err != nil {
 		t.Fatalf("AddPids() failed: %v", err)
 	}
+	if err := cls.SetCPUs("1"); err != nil {
+		t.Fatalf("SetCPUs() failed: %v", err)
+	}
 
 	// Configuration should fail as "Stale" class has pids assigned to it
 	if err := SetConfig(conf, false); err == nil {
@@ -285,6 +288,23 @@ partitions:
 	}
 
 	mockFs.verifyTextFile(rdt.classes["Guaranteed"].relPath("tasks"), "10\n11\n12\n")
+
+	// Verify assigning CPUs to classes (ctrl groups)
+	if p, err := cls.GetCPUs(); err != nil {
+		t.Errorf("GetCPUs() failed: %v", err)
+	} else if !cmp.Equal(p, "") {
+		t.Errorf("GetCPUs() returned %s, expected an empty string", p)
+	}
+	cpus := []string{"4", "10-13"}
+	if err := cls.SetCPUs(cpus...); err != nil {
+		t.Errorf("SetCPUs() failed: %v", err)
+	}
+	if p, err := cls.GetCPUs(); err != nil {
+		t.Errorf("GetCPUs() failed: %v", err)
+	} else if !cmp.Equal(p, strings.Join(cpus, ",")) {
+		t.Errorf("GetCPUs() returned %s, expected %s", p, cpus)
+	}
+	mockFs.verifyTextFile(rdt.classes["Guaranteed"].relPath("cpus_list"), "4,10-13")
 
 	// Verify MonSupported and GetMonFeatures
 	if !MonSupported() {
@@ -375,6 +395,17 @@ partitions:
 		t.Errorf("MonGroup.GetPids() returned %s, expected %s", p, pids)
 	}
 	mockFs.verifyTextFile(rdt.classes["Guaranteed"].monGroups[mgName].relPath("tasks"), "10\n")
+
+	// Verify assigning cpus to monitor group
+	if err := mg.SetCPUs("0-7"); err != nil {
+		t.Errorf("SetCPUs() failed: %v", err)
+	}
+	if p, err := mg.GetCPUs(); err != nil {
+		t.Errorf("GetCPUs() failed: %v", err)
+	} else if !cmp.Equal(p, "0-7") {
+		t.Errorf("GetCPUs() returned %s, expected 0-7", p)
+	}
+	mockFs.verifyTextFile(rdt.classes["Guaranteed"].monGroups[mgName].relPath("cpus_list"), "0-7")
 
 	// Verify monitoring functionality
 	expected := MonData{
