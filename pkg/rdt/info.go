@@ -32,15 +32,26 @@ type resctrlInfo struct {
 	resctrlPath      string
 	resctrlMountOpts map[string]struct{}
 	numClosids       uint64
-	cacheIds         []uint64
-	l3               l3Info
-	l3code           l3Info
-	l3data           l3Info
+	cat              map[cacheLevel]catInfoAll
 	l3mon            l3MonInfo
 	mb               mbInfo
 }
 
-type l3Info struct {
+type cacheLevel string
+
+const (
+	L2 cacheLevel = "L2"
+	L3 cacheLevel = "L3"
+)
+
+type catInfoAll struct {
+	cacheIds []uint64
+	unified  catInfo
+	code     catInfo
+	data     catInfo
+}
+
+type catInfo struct {
 	cbmMask       Bitmask
 	minCbmBits    uint64
 	shareableBits Bitmask
@@ -52,6 +63,7 @@ type l3MonInfo struct {
 }
 
 type mbInfo struct {
+	cacheIds      []uint64
 	bandwidthGran uint64
 	delayLinear   uint64
 	minBandwidth  uint64
@@ -60,32 +72,32 @@ type mbInfo struct {
 
 var mountInfoPath string = "/proc/mounts"
 
-// l3Info is a helper method for a "unified API" for getting L3 information
-func (i *resctrlInfo) l3Info() l3Info {
+// getInfo is a helper method for a "unified API" for getting L3 information
+func (i catInfoAll) getInfo() catInfo {
 	switch {
-	case i.l3code.Supported():
-		return i.l3code
-	case i.l3data.Supported():
-		return i.l3data
+	case i.code.Supported():
+		return i.code
+	case i.data.Supported():
+		return i.data
 	}
-	return i.l3
+	return i.unified
 }
 
-func (i *resctrlInfo) l3CbmMask() Bitmask {
-	mask := i.l3Info().cbmMask
+func (i catInfoAll) cbmMask() Bitmask {
+	mask := i.getInfo().cbmMask
 	if mask != 0 {
 		return mask
 	}
 	return Bitmask(^uint64(0))
 }
 
-func (i *resctrlInfo) l3MinCbmBits() uint64 {
-	return i.l3Info().minCbmBits
+func (i catInfoAll) minCbmBits() uint64 {
+	return i.getInfo().minCbmBits
 }
 
 func getRdtInfo() (*resctrlInfo, error) {
 	var err error
-	info := &resctrlInfo{}
+	info := &resctrlInfo{cat: make(map[cacheLevel]catInfoAll)}
 
 	info.resctrlPath, info.resctrlMountOpts, err = getResctrlMountInfo()
 	if err != nil {
@@ -99,31 +111,35 @@ func getRdtInfo() (*resctrlInfo, error) {
 		return info, rdtError("failed to read RDT info from %q: %v", infopath, err)
 	}
 
-	subpath := filepath.Join(infopath, "L3")
-	if _, err = os.Stat(subpath); err == nil {
-		info.l3, info.numClosids, err = getL3Info(subpath)
-		if err != nil {
-			return info, rdtError("failed to get L3 info from %q: %v", subpath, err)
+	// Check CAT feature available
+	for _, cl := range []cacheLevel{L2, L3} {
+		cat := catInfoAll{}
+		catFeatures := map[string]*catInfo{
+			"":     &cat.unified,
+			"CODE": &cat.code,
+			"DATA": &cat.data,
 		}
+		for suffix, i := range catFeatures {
+			dir := string(cl) + suffix
+			subpath := filepath.Join(infopath, dir)
+			if _, err = os.Stat(subpath); err == nil {
+				*i, info.numClosids, err = getCatInfo(subpath)
+				if err != nil {
+					return info, rdtError("failed to get %s info from %q: %v", dir, subpath, err)
+				}
+			}
+		}
+		if cat.getInfo().Supported() {
+			cat.cacheIds, err = getCacheIds(info.resctrlPath, string(cl))
+			if err != nil {
+				return info, rdtError("failed to get %s CAT cache IDs: %v", cl, err)
+			}
+		}
+		info.cat[cl] = cat
 	}
 
-	subpath = filepath.Join(infopath, "L3CODE")
-	if _, err = os.Stat(subpath); err == nil {
-		info.l3code, info.numClosids, err = getL3Info(subpath)
-		if err != nil {
-			return info, rdtError("failed to get L3CODE info from %q: %v", subpath, err)
-		}
-	}
-
-	subpath = filepath.Join(infopath, "L3DATA")
-	if _, err = os.Stat(subpath); err == nil {
-		info.l3data, info.numClosids, err = getL3Info(subpath)
-		if err != nil {
-			return info, rdtError("failed to get L3DATA info from %q: %v", subpath, err)
-		}
-	}
-
-	subpath = filepath.Join(infopath, "L3_MON")
+	// Check MON features available
+	subpath := filepath.Join(infopath, "L3_MON")
 	if _, err = os.Stat(subpath); err == nil {
 		info.l3mon, err = getL3MonInfo(subpath)
 		if err != nil {
@@ -131,26 +147,27 @@ func getRdtInfo() (*resctrlInfo, error) {
 		}
 	}
 
+	// Check MBA feature available
 	subpath = filepath.Join(infopath, "MB")
 	if _, err = os.Stat(subpath); err == nil {
 		info.mb, info.numClosids, err = getMBInfo(subpath)
 		if err != nil {
 			return info, rdtError("failed to get MBA info from %q: %v", subpath, err)
 		}
-	}
 
-	info.cacheIds, err = getCacheIds(info.resctrlPath)
-	if err != nil {
-		return info, rdtError("failed to get cache IDs: %v", err)
+		info.mb.cacheIds, err = getCacheIds(info.resctrlPath, "MB")
+		if err != nil {
+			return info, rdtError("failed to get MBA cache IDs: %v", err)
+		}
 	}
 
 	return info, nil
 }
 
-func getL3Info(basepath string) (l3Info, uint64, error) {
+func getCatInfo(basepath string) (catInfo, uint64, error) {
 	var err error
 	var numClosids uint64
-	info := l3Info{}
+	info := catInfo{}
 
 	info.cbmMask, err = readFileBitmask(filepath.Join(basepath, "cbm_mask"))
 	if err != nil {
@@ -173,7 +190,7 @@ func getL3Info(basepath string) (l3Info, uint64, error) {
 }
 
 // Supported returns true if L3 cache allocation has is supported and enabled in the system
-func (i l3Info) Supported() bool {
+func (i catInfo) Supported() bool {
 	return i.cbmMask != 0
 }
 
@@ -241,7 +258,7 @@ func (i mbInfo) Supported() bool {
 	return i.minBandwidth != 0
 }
 
-func getCacheIds(basepath string) ([]uint64, error) {
+func getCacheIds(basepath string, prefix string) ([]uint64, error) {
 	var ids []uint64
 
 	// Parse cache IDs from the root schemata
@@ -254,8 +271,8 @@ func getCacheIds(basepath string) ([]uint64, error) {
 		trimmed := strings.TrimSpace(line)
 		lineSplit := strings.SplitN(trimmed, ":", 2)
 
-		// Find line with L3 or MB schema
-		if len(lineSplit) == 2 && (strings.HasPrefix(lineSplit[0], "L3") || strings.HasPrefix(lineSplit[0], "MB")) {
+		// Find line with given resource prefix
+		if len(lineSplit) == 2 && strings.HasPrefix(lineSplit[0], prefix) {
 			schema := strings.Split(lineSplit[1], ";")
 			ids = make([]uint64, len(schema))
 
@@ -263,7 +280,7 @@ func getCacheIds(basepath string) ([]uint64, error) {
 			for idx, definition := range schema {
 				split := strings.Split(definition, "=")
 				if len(split) != 2 {
-					return ids, rdtError("looks like an invalid L3 %q", trimmed)
+					return ids, rdtError("looks like an invalid schema %q", trimmed)
 				}
 				ids[idx], err = strconv.ParseUint(split[0], 10, 64)
 				if err != nil {
@@ -273,7 +290,7 @@ func getCacheIds(basepath string) ([]uint64, error) {
 			return ids, nil
 		}
 	}
-	return ids, rdtError("no resources in root schemata")
+	return ids, rdtError("no %s resources in root schemata", prefix)
 }
 
 func getResctrlMountInfo() (string, map[string]struct{}, error) {

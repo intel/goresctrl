@@ -31,9 +31,11 @@ import (
 type Config struct {
 	Options    Options `json:"options"`
 	Partitions map[string]struct {
+		L2Allocation interface{} `json:"l2Allocation"`
 		L3Allocation interface{} `json:"l3Allocation"`
 		MBAllocation interface{} `json:"mbAllocation"`
 		Classes      map[string]struct {
+			L2Schema interface{} `json:"l2Schema"`
 			L3Schema interface{} `json:"l3Schema"`
 			MBSchema interface{} `json:"mbSchema"`
 		} `json:"classes"`
@@ -49,33 +51,34 @@ type config struct {
 }
 
 // partitionSet represents the pool of rdt partitions
-type partitionSet map[string]partitionConfig
+type partitionSet map[string]*partitionConfig
 
 // classSet represents the pool of rdt classes
-type classSet map[string]classConfig
+type classSet map[string]*classConfig
 
 // partitionConfig is the final configuration of one partition
 type partitionConfig struct {
-	L3 l3Schema
-	MB mbSchema
+	CAT map[cacheLevel]catSchema
+	MB  mbSchema
 }
 
 // classConfig represents configuration of one class, i.e. one CTRL group in
 // the Linux resctrl interface
 type classConfig struct {
 	Partition string
-	L3Schema  l3Schema
+	CATSchema map[cacheLevel]catSchema
 	MBSchema  mbSchema
 }
 
 // Options contains the common settings for all classes
 type Options struct {
-	L3 l3Options `json:"l3"`
-	MB mbOptions `json:"mb"`
+	L2 catOptions `json:"l2"`
+	L3 catOptions `json:"l3"`
+	MB mbOptions  `json:"mb"`
 }
 
-// l3Options contains the common settings for L3 cache allocation
-type l3Options struct {
+// catOptions contains the common settings for cache allocation
+type catOptions struct {
 	Optional bool
 }
 
@@ -84,14 +87,20 @@ type mbOptions struct {
 	Optional bool
 }
 
-// l3Schema represents the L3 part of the schemata of a class (i.e. resctrl group)
-type l3Schema map[uint64]l3Allocation
+// catSchema represents a cache part of the schemata of a class (i.e. resctrl group)
+type catSchema struct {
+	Lvl   cacheLevel
+	Alloc catSchemaRaw
+}
+
+// catSchemaRaw is the cache schemata without the information about cache level
+type catSchemaRaw map[uint64]catAllocation
 
 // mbSchema represents the MB part of the schemata of a class (i.e. resctrl group)
 type mbSchema map[uint64]uint64
 
-// l3Allocation describes the L3 allocation configuration for one cache id
-type l3Allocation struct {
+// catAllocation describes the allocation configuration for one cache id
+type catAllocation struct {
 	Unified cacheAllocation
 	Code    cacheAllocation `json:",omitempty"`
 	Data    cacheAllocation `json:",omitempty"`
@@ -100,37 +109,47 @@ type l3Allocation struct {
 // cacheAllocation is the basic interface for handling cache allocations of one
 // type (unified, code, data)
 type cacheAllocation interface {
-	Overlay(Bitmask) (Bitmask, error)
+	Overlay(Bitmask, uint64) (Bitmask, error)
 }
 
-// l3AbsoluteAllocation represents an explicitly specified cache allocation
+// catAbsoluteAllocation represents an explicitly specified cache allocation
 // bitmask
-type l3AbsoluteAllocation Bitmask
+type catAbsoluteAllocation Bitmask
 
-// l3PctAllocation represents a relative (percentage) share of the available
+// catPctAllocation represents a relative (percentage) share of the available
 // bitmask
-type l3PctAllocation uint64
+type catPctAllocation uint64
 
-// l3PctRangeAllocation represents a percentage range of the available bitmask
-type l3PctRangeAllocation struct {
+// catPctRangeAllocation represents a percentage range of the available bitmask
+type catPctRangeAllocation struct {
 	lowPct  uint64
 	highPct uint64
 }
 
-// L3SchemaType represents different L3 cache allocation schemes
-type l3SchemaType string
+// catSchemaType represents different L3 cache allocation schemes
+type catSchemaType string
 
 const (
-	// l3SchemaTypeUnified is the schema type when CDP is not enabled
-	l3SchemaTypeUnified l3SchemaType = "unified"
-	// l3SchemaTypeCode is the 'code' part of CDP schema
-	l3SchemaTypeCode l3SchemaType = "code"
-	// l3SchemaTypeData is the 'data' part of CDP schema
-	l3SchemaTypeData l3SchemaType = "data"
+	// catSchemaTypeUnified is the schema type when CDP is not enabled
+	catSchemaTypeUnified catSchemaType = "unified"
+	// catSchemaTypeCode is the 'code' part of CDP schema
+	catSchemaTypeCode catSchemaType = "code"
+	// catSchemaTypeData is the 'data' part of CDP schema
+	catSchemaTypeData catSchemaType = "data"
 )
 
-func (t l3SchemaType) ToResctrlStr() string {
-	if t == l3SchemaTypeUnified {
+func (o Options) Cat(lvl cacheLevel) catOptions {
+	switch lvl {
+	case L2:
+		return o.L2
+	case L3:
+		return o.L3
+	}
+	return catOptions{}
+}
+
+func (t catSchemaType) ToResctrlStr() string {
+	if t == catSchemaTypeUnified {
 		return ""
 	}
 	return strings.ToUpper(string(t))
@@ -141,33 +160,41 @@ const (
 	mbSuffixMbps = "MBps"
 )
 
-// ToStr returns the L3 schema in a format accepted by the Linux kernel
+func newCatSchema(typ cacheLevel) catSchema {
+	return catSchema{
+		Lvl:   typ,
+		Alloc: make(map[uint64]catAllocation),
+	}
+}
+
+// ToStr returns the CAT schema in a format accepted by the Linux kernel
 // resctrl (schemata) interface
-func (s l3Schema) ToStr(typ l3SchemaType, baseSchema l3Schema) (string, error) {
-	schema := "L3" + typ.ToResctrlStr() + ":"
+func (s catSchema) ToStr(typ catSchemaType, baseSchema catSchema) (string, error) {
+	schema := string(s.Lvl) + typ.ToResctrlStr() + ":"
 	sep := ""
 
 	// Get a sorted slice of cache ids for deterministic output
-	ids := make([]uint64, 0, len(baseSchema))
-	for id := range baseSchema {
+	ids := make([]uint64, 0, len(baseSchema.Alloc))
+	for id := range baseSchema.Alloc {
 		ids = append(ids, id)
 	}
 	utils.SortUint64s(ids)
 
+	minBits := info.cat[s.Lvl].minCbmBits()
 	for _, id := range ids {
-		baseMask, ok := baseSchema[id].getEffective(typ).(l3AbsoluteAllocation)
+		baseMask, ok := baseSchema.Alloc[id].getEffective(typ).(catAbsoluteAllocation)
 		if !ok {
-			return "", fmt.Errorf("BUG: basemask not of type l3AbsoluteAllocation")
+			return "", fmt.Errorf("BUG: basemask not of type catAbsoluteAllocation")
 		}
 		bitmask := Bitmask(baseMask)
 
-		if s != nil {
+		if s.Alloc != nil {
 			var err error
 
-			masks := s[id]
+			masks := s.Alloc[id]
 			overlayMask := masks.getEffective(typ)
 
-			bitmask, err = overlayMask.Overlay(bitmask)
+			bitmask, err = overlayMask.Overlay(bitmask, minBits)
 			if err != nil {
 				return "", err
 			}
@@ -179,21 +206,21 @@ func (s l3Schema) ToStr(typ l3SchemaType, baseSchema l3Schema) (string, error) {
 	return schema + "\n", nil
 }
 
-func (a l3Allocation) get(typ l3SchemaType) cacheAllocation {
+func (a catAllocation) get(typ catSchemaType) cacheAllocation {
 	switch typ {
-	case l3SchemaTypeCode:
+	case catSchemaTypeCode:
 		return a.Code
-	case l3SchemaTypeData:
+	case catSchemaTypeData:
 		return a.Data
 	}
 	return a.Unified
 }
 
-func (a l3Allocation) set(typ l3SchemaType, v cacheAllocation) l3Allocation {
+func (a catAllocation) set(typ catSchemaType, v cacheAllocation) catAllocation {
 	switch typ {
-	case l3SchemaTypeCode:
+	case catSchemaTypeCode:
 		a.Code = v
-	case l3SchemaTypeData:
+	case catSchemaTypeData:
 		a.Data = v
 	default:
 		a.Unified = v
@@ -202,13 +229,13 @@ func (a l3Allocation) set(typ l3SchemaType, v cacheAllocation) l3Allocation {
 	return a
 }
 
-func (a l3Allocation) getEffective(typ l3SchemaType) cacheAllocation {
+func (a catAllocation) getEffective(typ catSchemaType) cacheAllocation {
 	switch typ {
-	case l3SchemaTypeCode:
+	case catSchemaTypeCode:
 		if a.Code != nil {
 			return a.Code
 		}
-	case l3SchemaTypeData:
+	case catSchemaTypeData:
 		if a.Data != nil {
 			return a.Data
 		}
@@ -218,8 +245,8 @@ func (a l3Allocation) getEffective(typ l3SchemaType) cacheAllocation {
 }
 
 // Overlay function of the cacheAllocation interface
-func (a l3AbsoluteAllocation) Overlay(baseMask Bitmask) (Bitmask, error) {
-	if err := verifyL3BaseMask(baseMask); err != nil {
+func (a catAbsoluteAllocation) Overlay(baseMask Bitmask, minBits uint64) (Bitmask, error) {
+	if err := verifyCatBaseMask(baseMask, minBits); err != nil {
 		return 0, err
 	}
 
@@ -237,18 +264,18 @@ func (a l3AbsoluteAllocation) Overlay(baseMask Bitmask) (Bitmask, error) {
 }
 
 // MarshalJSON implements the Marshaler interface of "encoding/json"
-func (a l3AbsoluteAllocation) MarshalJSON() ([]byte, error) {
+func (a catAbsoluteAllocation) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("\"%#x\"", a)), nil
 }
 
 // Overlay function of the cacheAllocation interface
-func (a l3PctAllocation) Overlay(baseMask Bitmask) (Bitmask, error) {
-	return l3PctRangeAllocation{highPct: uint64(a)}.Overlay(baseMask)
+func (a catPctAllocation) Overlay(baseMask Bitmask, minBits uint64) (Bitmask, error) {
+	return catPctRangeAllocation{highPct: uint64(a)}.Overlay(baseMask, minBits)
 }
 
 // Overlay function of the cacheAllocation interface
-func (a l3PctRangeAllocation) Overlay(baseMask Bitmask) (Bitmask, error) {
-	if err := verifyL3BaseMask(baseMask); err != nil {
+func (a catPctRangeAllocation) Overlay(baseMask Bitmask, minBits uint64) (Bitmask, error) {
+	if err := verifyCatBaseMask(baseMask, minBits); err != nil {
 		return 0, err
 	}
 
@@ -272,8 +299,8 @@ func (a l3PctRangeAllocation) Overlay(baseMask Bitmask) (Bitmask, error) {
 
 	// Make sure the number of bits set satisfies the minimum requirement
 	numBits := msb - lsb + 1
-	if numBits < info.l3MinCbmBits() {
-		gap := info.l3MinCbmBits() - numBits
+	if numBits < minBits {
+		gap := minBits - numBits
 
 		// First, widen the mask from the "lsb end"
 		if gap <= lsb {
@@ -297,7 +324,7 @@ func (a l3PctRangeAllocation) Overlay(baseMask Bitmask) (Bitmask, error) {
 	return Bitmask(value), nil
 }
 
-func verifyL3BaseMask(baseMask Bitmask) error {
+func verifyCatBaseMask(baseMask Bitmask, minBits uint64) error {
 	if baseMask == 0 {
 		return fmt.Errorf("empty basemask not allowed")
 	}
@@ -308,20 +335,20 @@ func verifyL3BaseMask(baseMask Bitmask) error {
 	if bits.OnesCount64(uint64(baseMask)) != baseMaskWidth {
 		return fmt.Errorf("invalid basemask %#x: more than one block of bits set", baseMask)
 	}
-	if uint64(bits.OnesCount64(uint64(baseMask))) < info.l3MinCbmBits() {
-		return fmt.Errorf("invalid basemask %#x: fewer than %d bits set", baseMask, info.l3MinCbmBits())
+	if uint64(bits.OnesCount64(uint64(baseMask))) < minBits {
+		return fmt.Errorf("invalid basemask %#x: fewer than %d bits set", baseMask, minBits)
 	}
 
 	return nil
 }
 
 // MarshalJSON implements the Marshaler interface of "encoding/json"
-func (a l3PctAllocation) MarshalJSON() ([]byte, error) {
+func (a catPctAllocation) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("\"%d%%\"", a)), nil
 }
 
 // MarshalJSON implements the Marshaler interface of "encoding/json"
-func (a l3PctRangeAllocation) MarshalJSON() ([]byte, error) {
+func (a catPctRangeAllocation) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("\"%d-%d%%\"", a.lowPct, a.highPct)), nil
 }
 
@@ -434,14 +461,23 @@ func (raw Config) resolve() (config, error) {
 func (raw Config) resolvePartitions() (partitionSet, error) {
 	// Initialize empty partition configuration
 	conf := make(partitionSet, len(raw.Partitions))
-	numCacheIds := len(info.cacheIds)
 	for name := range raw.Partitions {
-		conf[name] = partitionConfig{L3: make(l3Schema, numCacheIds),
-			MB: make(mbSchema, numCacheIds)}
+		conf[name] = &partitionConfig{
+			CAT: map[cacheLevel]catSchema{
+				L2: newCatSchema(L2),
+				L3: newCatSchema(L3),
+			},
+			MB: make(mbSchema, len(info.mb.cacheIds))}
+	}
+
+	// Resolve L2 partition allocations
+	err := raw.resolveCatPartitions(L2, conf)
+	if err != nil {
+		return nil, err
 	}
 
 	// Try to resolve L3 partition allocations
-	err := raw.resolveL3Partitions(conf)
+	err = raw.resolveCatPartitions(L3, conf)
 	if err != nil {
 		return nil, err
 	}
@@ -455,15 +491,8 @@ func (raw Config) resolvePartitions() (partitionSet, error) {
 	return conf, nil
 }
 
-// resolveL3Partitions tries to resolve requested L3 allocations between partitions
-func (raw Config) resolveL3Partitions(conf partitionSet) error {
-	allocationsPerCacheID := make(map[uint64][]l3PartitionAllocation, len(info.cacheIds))
-	for _, id := range info.cacheIds {
-		allocationsPerCacheID[id] = make([]l3PartitionAllocation, 0, len(raw.Partitions))
-	}
-	// Helper structure for printing out human-readable info in the end
-	requests := map[string]map[uint64]l3Allocation{}
-
+// resolveCatPartitions tries to resolve requested cache allocations between partitions
+func (raw Config) resolveCatPartitions(lvl cacheLevel, conf partitionSet) error {
 	// Resolve partitions in sorted order for reproducibility
 	names := make([]string, 0, len(raw.Partitions))
 	for name := range raw.Partitions {
@@ -471,59 +500,57 @@ func (raw Config) resolveL3Partitions(conf partitionSet) error {
 	}
 	sort.Strings(names)
 
-	// Parse requested allocations from raw config and transfer them to our
-	// per-cache-id structure
-	numNils := 0
+	parser := newCatConfigParser(lvl)
+	resolver := newCacheResolver(lvl, names)
+
+	// Parse requested allocations from raw config load the resolver
 	for _, name := range names {
-		allocations, err := parseRawL3Allocations(raw.Partitions[name].L3Allocation)
+		var allocations catSchema
+		var err error
+		switch lvl {
+		case L2:
+			allocations, err = parser.parse(raw.Partitions[name].L2Allocation)
+		case L3:
+			allocations, err = parser.parse(raw.Partitions[name].L3Allocation)
+		}
 		if err != nil {
-			return fmt.Errorf("failed to parse L3 allocation request for partition %q: %v", name, err)
+			return fmt.Errorf("failed to parse %s allocation request for partition %q: %v", lvl, name, err)
 		}
 
-		requests[name] = allocations
-
-		if allocations == nil {
-			numNils++
-		}
-
-		for id, val := range allocations {
-			allocationsPerCacheID[id] = append(allocationsPerCacheID[id], l3PartitionAllocation{name: name, allocation: val})
-		}
+		resolver.requests[name] = allocations.Alloc
 	}
 
-	if numNils == len(raw.Partitions) {
-		log.Debug("L3 allocation disabled for all partitions")
+	// Run resolver fo partition allocations
+	grants, err := resolver.resolve()
+	if err != nil {
+		return err
+	}
+	if grants == nil {
+		log.Debug("%s allocation disabled for all partitions", lvl)
 		return nil
-	} else if numNils != 0 {
-		return fmt.Errorf("L3 allocation only specified for a subset of partitions")
 	}
 
-	// Next, try to resolve partition allocations, separately for each cache-id
-	fullBitmaskNumBits := uint64(info.l3CbmMask().lsbZero())
-	for id := range info.cacheIds {
-		err := conf.resolveCacheID(uint64(id), allocationsPerCacheID[uint64(id)])
-		if err != nil {
-			return err
-		}
+	for name, grant := range grants {
+		conf[name].CAT[lvl] = grant
 	}
 
-	log.Info("actual (and requested) L3 allocations per partition and cache id:")
+	log.Info("actual (and requested) %s allocations per partition and cache id:", lvl)
 	infoStr := ""
-	for name, partition := range requests {
+	for name, partition := range resolver.requests {
 		infoStr += "\n    " + name
-		for _, id := range info.cacheIds {
+		for _, id := range resolver.ids {
 			infoStr += fmt.Sprintf("\n      %2d: ", id)
 			allocationReq := partition[id]
-			for _, typ := range []l3SchemaType{l3SchemaTypeUnified, l3SchemaTypeCode, l3SchemaTypeData} {
+			for _, typ := range []catSchemaType{catSchemaTypeUnified, catSchemaTypeCode, catSchemaTypeData} {
 				infoStr += string(typ) + " "
 				requested := allocationReq.get(typ)
 				switch v := requested.(type) {
-				case l3AbsoluteAllocation:
+				case catAbsoluteAllocation:
 					infoStr += fmt.Sprintf("<absolute %#x>  ", v)
-				case l3PctAllocation:
-					granted := conf[name].L3[id].get(typ).(l3AbsoluteAllocation)
+				case catPctAllocation:
+					granted := grants[name].Alloc[id].get(typ).(catAbsoluteAllocation)
 					requestedPct := fmt.Sprintf("(%d%%)", v)
-					truePct := float64(bits.OnesCount64(uint64(granted))) * 100 / float64(fullBitmaskNumBits)
+					truePct := float64(bits.OnesCount64(uint64(granted))) * 100 / float64(resolver.bitsTotal)
 					infoStr += fmt.Sprintf("%5.1f%% %-6s ", truePct, requestedPct)
 				case nil:
 					infoStr += "<not specified>  "
@@ -537,16 +564,49 @@ func (raw Config) resolveL3Partitions(conf partitionSet) error {
 	return nil
 }
 
-type l3PartitionAllocation struct {
-	name       string
-	allocation l3Allocation
+// cacheResolver is a helper for resolving exclusive (partition) cache // allocation requests
+type cacheResolver struct {
+	lvl        cacheLevel
+	ids        []uint64
+	minBits    uint64
+	bitsTotal  uint64
+	partitions []string
+	requests   map[string]catSchemaRaw
+	grants     map[string]catSchema
+}
+
+func newCacheResolver(lvl cacheLevel, partitions []string) *cacheResolver {
+	r := &cacheResolver{
+		lvl:        lvl,
+		ids:        info.cat[lvl].cacheIds,
+		minBits:    info.cat[lvl].minCbmBits(),
+		bitsTotal:  uint64(info.cat[lvl].cbmMask().lsbZero()),
+		partitions: partitions,
+		requests:   make(map[string]catSchemaRaw, len(partitions)),
+		grants:     make(map[string]catSchema, len(partitions))}
+
+	for _, p := range partitions {
+		r.grants[p] = catSchema{Lvl: lvl, Alloc: make(catSchemaRaw, len(r.ids))}
+	}
+
+	return r
+}
+
+func (r *cacheResolver) resolve() (map[string]catSchema, error) {
+	for _, id := range r.ids {
+		err := r.resolveID(id)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return r.grants, nil
 }
 
 // resolveCacheID resolves the partition allocations for one cache id
-func (s partitionSet) resolveCacheID(id uint64, partitions []l3PartitionAllocation) error {
-	for _, typ := range []l3SchemaType{l3SchemaTypeUnified, l3SchemaTypeCode, l3SchemaTypeData} {
+func (r *cacheResolver) resolveID(id uint64) error {
+	for _, typ := range []catSchemaType{catSchemaTypeUnified, catSchemaTypeCode, catSchemaTypeData} {
 		log.Debug("resolving partitions for %q schema for cache id %d", typ, id)
-		err := s.resolveCacheIDPerType(id, partitions, typ)
+		err := r.resolveType(id, typ)
 		if err != nil {
 			return err
 		}
@@ -554,29 +614,30 @@ func (s partitionSet) resolveCacheID(id uint64, partitions []l3PartitionAllocati
 	return nil
 }
 
-func (s partitionSet) resolveCacheIDPerType(id uint64, partitions []l3PartitionAllocation, typ l3SchemaType) error {
+// resolveType resolve one schema type for one cache id
+func (r *cacheResolver) resolveType(id uint64, typ catSchemaType) error {
 	// Sanity check: if any partition has l3 allocation of this schema type
 	// configured check that all other partitions have it, too
-	a := partitions[0].allocation.get(typ)
+	a := r.requests[r.partitions[0]][id].get(typ)
 	isNil := a == nil
-	for _, partition := range partitions {
-		if (partition.allocation.get(typ) == nil) != isNil {
-			return fmt.Errorf("some partition(s) missing l3 %q allocation request for cache id %d", typ, id)
+	for _, partition := range r.partitions {
+		if (r.requests[partition][id].get(typ) == nil) != isNil {
+			return fmt.Errorf("partition %q missing %s %q allocation request for cache id %d", partition, r.lvl, typ, id)
 		}
 	}
 
 	// Act depending on the type of the first request in the list
 	switch a.(type) {
-	case l3AbsoluteAllocation:
-		return s.resolveCacheIDAbsolute(id, partitions, typ)
+	case catAbsoluteAllocation:
+		return r.resolveAbsolute(id, typ)
 	case nil:
 	default:
-		return s.resolveCacheIDRelative(id, partitions, typ)
+		return r.resolveRelative(id, typ)
 	}
 	return nil
 }
 
-func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3PartitionAllocation, typ l3SchemaType) error {
+func (r *cacheResolver) resolveRelative(id uint64, typ catSchemaType) error {
 	type reqHelper struct {
 		name string
 		req  uint64
@@ -587,24 +648,25 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 	// 2. total allocation requested for this cache id does not exceed 100 percent
 	// Additionally fill a helper structure for sorting partitions
 	percentageTotal := uint64(0)
-	reqs := make([]reqHelper, 0, len(partitions))
-	for _, partition := range partitions {
-		switch a := partition.allocation.get(typ).(type) {
-		case l3PctAllocation:
+	reqs := make([]reqHelper, 0, len(r.partitions))
+	for _, partition := range r.partitions {
+		switch a := r.requests[partition][id].get(typ).(type) {
+		case catPctAllocation:
 			percentageTotal += uint64(a)
-			reqs = append(reqs, reqHelper{name: partition.name, req: uint64(a)})
-		case l3AbsoluteAllocation:
-			return fmt.Errorf("error resolving L3 allocation for cache id %d: mixing relative and absolute allocations between partitions not supported", id)
-		case l3PctRangeAllocation:
+			reqs = append(reqs, reqHelper{name: partition, req: uint64(a)})
+		case catAbsoluteAllocation:
+			return fmt.Errorf("error resolving %s allocation for cache id %d: mixing "+
+				"relative and absolute allocations between partitions not supported", r.lvl, id)
+		case catPctRangeAllocation:
 			return fmt.Errorf("percentage ranges in partition allocation not supported")
 		default:
 			return fmt.Errorf("BUG: unknown cacheAllocation type %T", a)
 		}
 	}
 	if percentageTotal < 100 {
-		log.Info("requested total L3 %q partition allocation for cache id %d <100%% (%d%%)", typ, id, percentageTotal)
+		log.Info("requested total %s %q partition allocation for cache id %d <100%% (%d%%)", r.lvl, typ, id, percentageTotal)
 	} else if percentageTotal > 100 {
-		return fmt.Errorf("accumulated L3 %q partition allocation requests for cache id %d exceeds 100%% (%d%%)", typ, id, percentageTotal)
+		return fmt.Errorf("accumulated %s %q partition allocation requests for cache id %d exceeds 100%% (%d%%)", r.lvl, typ, id, percentageTotal)
 	}
 
 	// Sort partition allocations. We want to resolve smallest allocations
@@ -614,18 +676,17 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 		return reqs[i].req < reqs[j].req
 	})
 
-	// Calculate number of bits granted each partition.
-	grants := make(map[string]uint64, len(partitions))
-	minCbmBits := info.l3MinCbmBits()
-	bitsTotal := percentageTotal * uint64(info.l3CbmMask().lsbZero()) / 100
+	// Calculate number of bits granted to each partition.
+	grants := make(map[string]uint64, len(r.partitions))
+	bitsTotal := percentageTotal * uint64(r.bitsTotal) / 100
 	bitsAvailable := bitsTotal
 	for i, req := range reqs {
 		percentageAvailable := bitsAvailable * percentageTotal / bitsTotal
 
 		// This might happen e.g. if number of partitions would be greater
 		// than the total number of bits
-		if bitsAvailable < minCbmBits {
-			return fmt.Errorf("unable to resolve L3 allocation for cache id %d, not enough exlusive bits available", id)
+		if bitsAvailable < r.minBits {
+			return fmt.Errorf("unable to resolve %s allocation for cache id %d, not enough exlusive bits available", r.lvl, id)
 		}
 
 		// Use integer arithmetics, effectively always rounding down
@@ -633,8 +694,8 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 		numBits := req.req * bitsAvailable / percentageAvailable
 
 		// Guarantee a non-zero allocation
-		if numBits < minCbmBits {
-			numBits = minCbmBits
+		if numBits < r.minBits {
+			numBits = r.minBits
 		}
 		// Don't overflow, allocate all remaining bits to the last partition
 		if numBits > bitsAvailable || i == len(reqs)-1 {
@@ -647,33 +708,33 @@ func (s partitionSet) resolveCacheIDRelative(id uint64, partitions []l3Partition
 
 	// Construct the actual bitmasks for each partition
 	lsbID := uint64(0)
-	for _, partition := range partitions {
+	for _, partition := range r.partitions {
 		// Compose the actual bitmask
-		v := s[partition.name].L3[id].set(typ, l3AbsoluteAllocation(Bitmask(((1<<grants[partition.name])-1)<<lsbID)))
-		s[partition.name].L3[id] = v
+		v := r.grants[partition].Alloc[id].set(typ, catAbsoluteAllocation(Bitmask(((1<<grants[partition])-1)<<lsbID)))
+		r.grants[partition].Alloc[id] = v
 
-		lsbID += grants[partition.name]
+		lsbID += grants[partition]
 	}
 
 	return nil
 }
 
-func (s partitionSet) resolveCacheIDAbsolute(id uint64, partitions []l3PartitionAllocation, typ l3SchemaType) error {
+func (r *cacheResolver) resolveAbsolute(id uint64, typ catSchemaType) error {
 	// Just sanity check:
 	// 1. allocation requests of the correct type (absolute)
 	// 2. allocations do not overlap
 	mask := Bitmask(0)
-	for _, partition := range partitions {
-		a, ok := partition.allocation.get(typ).(l3AbsoluteAllocation)
+	for _, partition := range r.partitions {
+		a, ok := r.requests[partition][id].get(typ).(catAbsoluteAllocation)
 		if !ok {
-			return fmt.Errorf("error resolving L3 allocation for cache id %d: mixing absolute and relative allocations between partitions not supported", id)
+			return fmt.Errorf("error resolving %s allocation for cache id %d: mixing absolute and relative allocations between partitions not supported", r.lvl, id)
 		}
 		if Bitmask(a)&mask > 0 {
-			return fmt.Errorf("overlapping L3 partition allocation requests for cache id %d", id)
+			return fmt.Errorf("overlapping %s partition allocation requests for cache id %d", r.lvl, id)
 		}
 		mask |= Bitmask(a)
 
-		s[partition.name].L3[id] = s[partition.name].L3[id].set(typ, a)
+		r.grants[partition].Alloc[id] = r.grants[partition].Alloc[id].set(typ, a)
 	}
 
 	return nil
@@ -703,6 +764,8 @@ func (raw Config) resolveMBPartitions(conf partitionSet) error {
 func (raw Config) resolveClasses() (classSet, error) {
 	classes := make(classSet)
 
+	catL3Parser := newCatConfigParser(L3)
+	catL2Parser := newCatConfigParser(L2)
 	for bname, partition := range raw.Partitions {
 		for gname, class := range partition.Classes {
 			if _, ok := classes[gname]; ok {
@@ -710,13 +773,22 @@ func (raw Config) resolveClasses() (classSet, error) {
 			}
 
 			var err error
-			gc := classConfig{Partition: bname}
+			gc := &classConfig{Partition: bname,
+				CATSchema: make(map[cacheLevel]catSchema)}
 
-			gc.L3Schema, err = parseRawL3Allocations(class.L3Schema)
+			gc.CATSchema[L2], err = catL2Parser.parse(class.L2Schema)
+			if err != nil {
+				return classes, fmt.Errorf("failed to resolve L2 allocation for class %q: %v", gname, err)
+			}
+			if gc.CATSchema[L2].Alloc != nil && partition.L2Allocation == nil {
+				return classes, fmt.Errorf("L2 allocation missing from partition %q but class %q specifies L2 schema", bname, gname)
+			}
+
+			gc.CATSchema[L3], err = catL3Parser.parse(class.L3Schema)
 			if err != nil {
 				return classes, fmt.Errorf("failed to resolve L3 allocation for class %q: %v", gname, err)
 			}
-			if gc.L3Schema != nil && partition.L3Allocation == nil {
+			if gc.CATSchema[L3].Alloc != nil && partition.L3Allocation == nil {
 				return classes, fmt.Errorf("L3 allocation missing from partition %q but class %q specifies L3 schema", bname, gname)
 			}
 
@@ -735,27 +807,9 @@ func (raw Config) resolveClasses() (classSet, error) {
 	return classes, nil
 }
 
-// parseRawL3Allocations parses a raw L3 cache allocation
-func parseRawL3Allocations(raw interface{}) (l3Schema, error) {
-	rawValues, err := preparseRawAllocations(raw, "100%", false)
-	if err != nil || rawValues == nil {
-		return nil, err
-	}
-
-	allocations := make(l3Schema, len(rawValues))
-	for id, rawVal := range rawValues {
-		allocations[id], err = parseL3Allocation(rawVal)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return allocations, nil
-}
-
 // parseRawMBAllocations parses a raw MB allocation
 func parseRawMBAllocations(raw interface{}) (mbSchema, error) {
-	rawValues, err := preparseRawAllocations(raw, []interface{}{}, false)
+	rawValues, err := preparseRawAllocations(raw, []interface{}{}, info.mb.cacheIds)
 	if err != nil || rawValues == nil {
 		return nil, err
 	}
@@ -777,13 +831,13 @@ func parseRawMBAllocations(raw interface{}) (mbSchema, error) {
 
 // preparseRawAllocations "pre-parses" the rawAllocations per each cache id. I.e. it assigns
 // a raw (string) allocation for each cache id
-func preparseRawAllocations(raw interface{}, defaultVal interface{}, initEmpty bool) (map[uint64]interface{}, error) {
-	if raw == nil && !initEmpty {
+func preparseRawAllocations(raw interface{}, defaultVal interface{}, cacheIds []uint64) (map[uint64]interface{}, error) {
+	if raw == nil {
 		return nil, nil
 	}
 
 	var rawPerCacheId map[string]interface{}
-	allocations := make(map[uint64]interface{}, len(info.cacheIds))
+	allocations := make(map[uint64]interface{}, len(cacheIds))
 
 	switch value := raw.(type) {
 	case string:
@@ -801,7 +855,7 @@ func preparseRawAllocations(raw interface{}, defaultVal interface{}, initEmpty b
 		return allocations, fmt.Errorf("invalid structure of allocation schema '%v' (%T)", raw, raw)
 	}
 
-	for _, i := range info.cacheIds {
+	for _, i := range cacheIds {
 		allocations[i] = defaultVal
 	}
 
@@ -823,14 +877,46 @@ func preparseRawAllocations(raw interface{}, defaultVal interface{}, initEmpty b
 	return allocations, nil
 }
 
-// parseL3Allocation parses a generic string map into l3Allocation struct
-func parseL3Allocation(raw interface{}) (l3Allocation, error) {
+// catConfigParser is a helper for parsing cache allocation from the input config
+type catConfigParser struct {
+	lvl     cacheLevel
+	ids     []uint64
+	minBits uint64
+}
+
+func newCatConfigParser(lvl cacheLevel) *catConfigParser {
+	return &catConfigParser{
+		lvl:     lvl,
+		ids:     info.cat[lvl].cacheIds,
+		minBits: info.cat[lvl].minCbmBits()}
+}
+
+// parse parses an L3 cache allocation from the input config
+func (p *catConfigParser) parse(raw interface{}) (catSchema, error) {
+	rawValues, err := preparseRawAllocations(raw, "100%", p.ids)
+	if err != nil || rawValues == nil {
+		return catSchema{Lvl: p.lvl}, err
+	}
+
+	allocations := newCatSchema(p.lvl)
+	for id, rawVal := range rawValues {
+		allocations.Alloc[id], err = p.parseSchema(rawVal)
+		if err != nil {
+			return allocations, err
+		}
+	}
+
+	return allocations, nil
+}
+
+// parseSchema parses a generic string or map of strings into l3Allocation struct
+func (p *catConfigParser) parseSchema(raw interface{}) (catAllocation, error) {
 	var err error
-	allocation := l3Allocation{}
+	allocation := catAllocation{}
 
 	switch value := raw.(type) {
 	case string:
-		allocation.Unified, err = parseCacheAllocation(value)
+		allocation.Unified, err = p.parseString(value)
 		if err != nil {
 			return allocation, err
 		}
@@ -841,37 +927,37 @@ func parseL3Allocation(raw interface{}) (l3Allocation, error) {
 				return allocation, fmt.Errorf("not a string value %q", v)
 			}
 			switch strings.ToLower(k) {
-			case string(l3SchemaTypeUnified):
-				allocation.Unified, err = parseCacheAllocation(s)
-			case string(l3SchemaTypeCode):
-				allocation.Code, err = parseCacheAllocation(s)
-			case string(l3SchemaTypeData):
-				allocation.Data, err = parseCacheAllocation(s)
+			case string(catSchemaTypeUnified):
+				allocation.Unified, err = p.parseString(s)
+			case string(catSchemaTypeCode):
+				allocation.Code, err = p.parseString(s)
+			case string(catSchemaTypeData):
+				allocation.Data, err = p.parseString(s)
 			}
 			if err != nil {
 				return allocation, err
 			}
 		}
 	default:
-		return allocation, fmt.Errorf("invalid structure of l3Schema %q", raw)
+		return allocation, fmt.Errorf("invalid structure of cache schema %q", raw)
 	}
 
 	// Sanity check for the configuration
 	if allocation.Unified == nil {
-		return allocation, fmt.Errorf("'unified' not specified in l3Schema %s", raw)
+		return allocation, fmt.Errorf("'unified' not specified in cache schema %s", raw)
 	}
 	if allocation.Code != nil && allocation.Data == nil {
-		return allocation, fmt.Errorf("'code' specified but missing 'data' from l3Schema %s", raw)
+		return allocation, fmt.Errorf("'code' specified but missing 'data' from cache schema %s", raw)
 	}
 	if allocation.Code == nil && allocation.Data != nil {
-		return allocation, fmt.Errorf("'data' specified but missing 'code' from l3Schema %s", raw)
+		return allocation, fmt.Errorf("'data' specified but missing 'code' from cache schema %s", raw)
 	}
 
 	return allocation, nil
 }
 
-// parseCacheAllocation parses a string value into cacheAllocation type
-func parseCacheAllocation(data string) (cacheAllocation, error) {
+// parseString parses a string value into cacheAllocation type
+func (p *catConfigParser) parseString(data string) (cacheAllocation, error) {
 	if data[len(data)-1] == '%' {
 		// Percentages of the max number of bits
 		split := strings.SplitN(data[0:len(data)-1], "-", 2)
@@ -885,7 +971,7 @@ func parseCacheAllocation(data string) (cacheAllocation, error) {
 			if pct > 100 {
 				return allocation, fmt.Errorf("invalid percentage value %q", data)
 			}
-			allocation = l3PctAllocation(pct)
+			allocation = catPctAllocation(pct)
 		} else {
 			low, err := strconv.ParseUint(split[0], 10, 7)
 			if err != nil {
@@ -898,7 +984,7 @@ func parseCacheAllocation(data string) (cacheAllocation, error) {
 			if low > high || low > 100 || high > 100 {
 				return allocation, fmt.Errorf("invalid percentage range %q", data)
 			}
-			allocation = l3PctRangeAllocation{lowPct: low, highPct: high}
+			allocation = catPctRangeAllocation{lowPct: low, highPct: high}
 		}
 
 		return allocation, nil
@@ -928,11 +1014,11 @@ func parseCacheAllocation(data string) (cacheAllocation, error) {
 	if numOnes != 64-bits.LeadingZeros64(value)-bits.TrailingZeros64(value) {
 		return nil, fmt.Errorf("invalid cache bitmask %q: more than one continuous block of ones", data)
 	}
-	if uint64(numOnes) < info.l3MinCbmBits() {
-		return nil, fmt.Errorf("invalid cache bitmask %q: number of bits less than %d", data, info.l3MinCbmBits())
+	if uint64(numOnes) < p.minBits {
+		return nil, fmt.Errorf("invalid %s cache bitmask %q: number of bits less than %d", p.lvl, data, p.minBits)
 	}
 
-	return l3AbsoluteAllocation(value), nil
+	return catAbsoluteAllocation(value), nil
 }
 
 // parseMBAllocation parses a generic string map into MB allocation value

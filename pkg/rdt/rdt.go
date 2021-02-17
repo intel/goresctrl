@@ -523,33 +523,35 @@ func (c *ctrlGroup) GetMonGroups() []MonGroup {
 	return ret
 }
 
-func (c *ctrlGroup) configure(name string, class classConfig,
-	partition partitionConfig, options Options) error {
+func (c *ctrlGroup) configure(name string, class *classConfig,
+	partition *partitionConfig, options Options) error {
 	schemata := ""
 
-	// Handle L3 cache allocation
-	switch {
-	case info.l3.Supported():
-		schema, err := class.L3Schema.ToStr(l3SchemaTypeUnified, partition.L3)
-		if err != nil {
-			return err
-		}
-		schemata += schema
-	case info.l3data.Supported() || info.l3code.Supported():
-		schema, err := class.L3Schema.ToStr(l3SchemaTypeCode, partition.L3)
-		if err != nil {
-			return err
-		}
-		schemata += schema
+	// Handle cache allocation
+	for _, lvl := range []cacheLevel{L2, L3} {
+		switch {
+		case info.cat[lvl].unified.Supported():
+			schema, err := class.CATSchema[lvl].ToStr(catSchemaTypeUnified, partition.CAT[lvl])
+			if err != nil {
+				return err
+			}
+			schemata += schema
+		case info.cat[lvl].data.Supported() || info.cat[lvl].code.Supported():
+			schema, err := class.CATSchema[lvl].ToStr(catSchemaTypeCode, partition.CAT[lvl])
+			if err != nil {
+				return err
+			}
+			schemata += schema
 
-		schema, err = class.L3Schema.ToStr(l3SchemaTypeData, partition.L3)
-		if err != nil {
-			return err
-		}
-		schemata += schema
-	default:
-		if class.L3Schema != nil && !options.L3.Optional {
-			return rdtError("L3 cache allocation for %q specified in configuration but not supported by system", name)
+			schema, err = class.CATSchema[lvl].ToStr(catSchemaTypeData, partition.CAT[lvl])
+			if err != nil {
+				return err
+			}
+			schemata += schema
+		default:
+			if class.CATSchema[lvl].Alloc != nil && !options.Cat(lvl).Optional {
+				return rdtError("%s cache allocation for %q specified in configuration but not supported by system", lvl, name)
+			}
 		}
 	}
 
