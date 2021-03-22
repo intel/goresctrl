@@ -28,6 +28,7 @@ import (
 	"strings"
 	"syscall"
 
+	grclog "github.com/intel/goresctrl/pkg/log"
 	"github.com/intel/goresctrl/pkg/utils"
 )
 
@@ -38,7 +39,7 @@ const (
 )
 
 type control struct {
-	Logger
+	grclog.Logger
 
 	resctrlGroupPrefix string
 	conf               config
@@ -46,7 +47,7 @@ type control struct {
 	classes            map[string]*ctrlGroup
 }
 
-var log Logger = NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt ] ", 0))
+var log grclog.Logger = grclog.NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt ] ", 0))
 
 var info *resctrlInfo
 
@@ -142,7 +143,7 @@ type resctrlGroup struct {
 
 // SetLogger sets the logger instance to be used by the package. This function
 // may be called even before Initialize().
-func SetLogger(l Logger) {
+func SetLogger(l grclog.Logger) {
 	log = l
 	if rdt != nil {
 		rdt.setLogger(l)
@@ -259,7 +260,7 @@ func (c *control) getMonFeatures() map[MonResource][]string {
 	return ret
 }
 
-func (c *control) setLogger(l Logger) {
+func (c *control) setLogger(l grclog.Logger) {
 	c.Logger = l
 }
 

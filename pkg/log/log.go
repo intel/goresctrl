@@ -1,5 +1,5 @@
 /*
-Copyright 2019 Intel Corporation
+Copyright 2019-2021 Intel Corporation
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package rdt
+package log
 
 import (
 	"fmt"
@@ -32,6 +32,7 @@ type Logger interface {
 	Fatal(format string, v ...interface{})
 	DebugBlock(prefix, format string, v ...interface{})
 	InfoBlock(prefix, format string, v ...interface{})
+	Prefix() string
 }
 
 type logger struct {
@@ -83,4 +84,8 @@ func (l *logger) blockPrint(levelPrefix, linePrefix, format string, v ...interfa
 
 	p := strings.Repeat(" ", len(l.Logger.Prefix())+len(levelPrefix)) + linePrefix
 	l.Logger.Print(strings.Join(lines, "\n"+p))
+}
+
+func (l *logger) Prefix() string {
+	return l.Logger.Prefix()
 }
