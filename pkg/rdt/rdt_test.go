@@ -30,6 +30,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	grclog "github.com/intel/goresctrl/pkg/log"
 	"github.com/intel/goresctrl/pkg/utils"
 	testdata "github.com/intel/goresctrl/test/data"
 )
@@ -177,7 +178,7 @@ partitions:
 	//
 	// 1. test uninitialized interface
 	//
-	SetLogger(NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt-test-1 ] ", 0)))
+	SetLogger(grclog.NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt-test-1 ] ", 0)))
 
 	if err := SetConfig(&Config{}, false); err == nil {
 		t.Errorf("setting config on uninitialized rdt succeeded unexpectedly")
@@ -233,8 +234,8 @@ partitions:
 	}
 
 	// Check that SetLogger() takes effect in the control interface, too
-	SetLogger(NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt-test-2 ] ", 0)))
-	if p := rdt.Logger.(*logger).Prefix(); p != "[ rdt-test-2 ] " {
+	SetLogger(grclog.NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt-test-2 ] ", 0)))
+	if p := rdt.Logger.Prefix(); p != "[ rdt-test-2 ] " {
 		t.Errorf("unexpected logger prefix %q", p)
 	}
 
