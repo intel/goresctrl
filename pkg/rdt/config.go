@@ -437,18 +437,18 @@ func listStrToArray(str string) ([]int, error) {
 
 // resolve tries to resolve the requested configuration into a working
 // configuration
-func (raw Config) resolve() (config, error) {
+func (c *Config) resolve() (config, error) {
 	var err error
-	conf := config{Options: raw.Options}
+	conf := config{Options: c.Options}
 
-	log.DebugBlock("", "resolving configuration: |\n%s", utils.DumpJSON(raw))
+	log.DebugBlock("", "resolving configuration: |\n%s", utils.DumpJSON(c))
 
-	conf.Partitions, err = raw.resolvePartitions()
+	conf.Partitions, err = c.resolvePartitions()
 	if err != nil {
 		return conf, err
 	}
 
-	conf.Classes, err = raw.resolveClasses()
+	conf.Classes, err = c.resolveClasses()
 	if err != nil {
 		return conf, err
 	}
@@ -458,10 +458,10 @@ func (raw Config) resolve() (config, error) {
 
 // resolvePartitions tries to resolve the requested resource allocations of
 // partitions
-func (raw Config) resolvePartitions() (partitionSet, error) {
+func (c *Config) resolvePartitions() (partitionSet, error) {
 	// Initialize empty partition configuration
-	conf := make(partitionSet, len(raw.Partitions))
-	for name := range raw.Partitions {
+	conf := make(partitionSet, len(c.Partitions))
+	for name := range c.Partitions {
 		conf[name] = &partitionConfig{
 			CAT: map[cacheLevel]catSchema{
 				L2: newCatSchema(L2),
@@ -471,19 +471,19 @@ func (raw Config) resolvePartitions() (partitionSet, error) {
 	}
 
 	// Resolve L2 partition allocations
-	err := raw.resolveCatPartitions(L2, conf)
+	err := c.resolveCatPartitions(L2, conf)
 	if err != nil {
 		return nil, err
 	}
 
 	// Try to resolve L3 partition allocations
-	err = raw.resolveCatPartitions(L3, conf)
+	err = c.resolveCatPartitions(L3, conf)
 	if err != nil {
 		return nil, err
 	}
 
 	// Try to resolve MB partition allocations
-	err = raw.resolveMBPartitions(conf)
+	err = c.resolveMBPartitions(conf)
 	if err != nil {
 		return nil, err
 	}
@@ -492,10 +492,10 @@ func (raw Config) resolvePartitions() (partitionSet, error) {
 }
 
 // resolveCatPartitions tries to resolve requested cache allocations between partitions
-func (raw Config) resolveCatPartitions(lvl cacheLevel, conf partitionSet) error {
+func (c *Config) resolveCatPartitions(lvl cacheLevel, conf partitionSet) error {
 	// Resolve partitions in sorted order for reproducibility
-	names := make([]string, 0, len(raw.Partitions))
-	for name := range raw.Partitions {
+	names := make([]string, 0, len(c.Partitions))
+	for name := range c.Partitions {
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -509,9 +509,9 @@ func (raw Config) resolveCatPartitions(lvl cacheLevel, conf partitionSet) error 
 		var err error
 		switch lvl {
 		case L2:
-			allocations, err = parser.parse(raw.Partitions[name].L2Allocation)
+			allocations, err = parser.parse(c.Partitions[name].L2Allocation)
 		case L3:
-			allocations, err = parser.parse(raw.Partitions[name].L3Allocation)
+			allocations, err = parser.parse(c.Partitions[name].L3Allocation)
 		}
 		if err != nil {
 			return fmt.Errorf("failed to parse %s allocation request for partition %q: %v", lvl, name, err)
@@ -741,9 +741,9 @@ func (r *cacheResolver) resolveAbsolute(id uint64, typ catSchemaType) error {
 }
 
 // resolveMBPartitions tries to resolve requested MB allocations between partitions
-func (raw Config) resolveMBPartitions(conf partitionSet) error {
+func (c *Config) resolveMBPartitions(conf partitionSet) error {
 	// We use percentage values directly from the raw conf
-	for name, partition := range raw.Partitions {
+	for name, partition := range c.Partitions {
 		allocations, err := parseRawMBAllocations(partition.MBAllocation)
 		if err != nil {
 			return fmt.Errorf("failed to resolve MB allocation for partition %q: %v", name, err)
@@ -761,12 +761,12 @@ func (raw Config) resolveMBPartitions(conf partitionSet) error {
 }
 
 // resolveClasses tries to resolve class allocations of all partitions
-func (raw Config) resolveClasses() (classSet, error) {
+func (c *Config) resolveClasses() (classSet, error) {
 	classes := make(classSet)
 
 	catL3Parser := newCatConfigParser(L3)
 	catL2Parser := newCatConfigParser(L2)
-	for bname, partition := range raw.Partitions {
+	for bname, partition := range c.Partitions {
 		for gname, class := range partition.Classes {
 			if _, ok := classes[gname]; ok {
 				return classes, fmt.Errorf("class names must be unique, %q defined multiple times", gname)
