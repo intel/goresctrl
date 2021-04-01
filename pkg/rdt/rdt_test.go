@@ -1,5 +1,5 @@
 /*
-Copyright 2019 Intel Corporation
+Copyright 2019-2021 Intel Corporation
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -126,7 +126,7 @@ partitions:
       all: [100%]
     classes:
       Guaranteed:
-        l3schema:
+        l3Allocation:
           all: 100%
   default:
     l3Allocation:
@@ -135,14 +135,14 @@ partitions:
       all: [100%]
     classes:
       Burstable:
-        l3schema:
+        l3Allocation:
           all: 100%
-        mbschema:
+        mbAllocation:
           all: [66%]
       BestEffort:
-        l3schema:
+        l3Allocation:
           all: 66%
-        mbschema:
+        mbAllocation:
           all: [33%]
 `
 
@@ -466,13 +466,13 @@ partitions:
       all: [100%]
     classes:
       class-1:
-        l3schema: 100%
+        l3Allocation: 100%
       class-2:
-        l3schema:
+        l3Allocation:
           all: 100%
           0-1: 10%
           2: "0x70"
-        mbschema:
+        mbAllocation:
           all: [40%]
           3: [10%]
   part-2:
@@ -486,16 +486,16 @@ partitions:
       2: [100%]
     classes:
       class-3:
-        l3schema: 100%
-        mbschema:
+        l3Allocation: 100%
+        mbAllocation:
           all: [40%]
           0: [80%]
       class-4:
-        l3schema: 50%
-        mbschema: [100%]
+        l3Allocation: 50%
+        mbAllocation: [100%]
       SYSTEM_DEFAULT:
-        l3schema: 60%
-        mbschema: [60%]
+        l3Allocation: 60%
+        mbAllocation: [60%]
   part-3:
     l3Allocation:
       all: 1%
@@ -504,8 +504,8 @@ partitions:
     mbAllocation: [20%]
     classes:
       class-5:
-        l3schema: 100%
-        mbschema:
+        l3Allocation: 100%
+        mbAllocation:
           all: [100%]
           0: [1%]
 `,
@@ -561,7 +561,7 @@ partitions:
     classes:
       class-2:
       SYSTEM_DEFAULT:
-        l3Schema:
+        l3Allocation:
           all: 100%
           3:
             unified: 80%
@@ -606,7 +606,7 @@ partitions:
     classes:
       class-2:
       SYSTEM_DEFAULT:
-        l3Schema:
+        l3Allocation:
           all: 100%
           3:
             unified: 80%
@@ -643,8 +643,8 @@ partitions:
     mbAllocation: [100%]
     classes:
       class-1:
-        l3schema: 20%
-        mbschema: [50%]
+        l3Allocation: 20%
+        mbAllocation: [50%]
 `,
 			schemata: map[string]Schemata{
 				"class-1": Schemata{
@@ -672,17 +672,6 @@ partitions:
 		},
 		// Testcase
 		TC{
-			name:        "Invalid allocation schema (fail)",
-			fs:          "resctrl.nomb",
-			configErrRe: `failed to parse L3 allocation request for partition "part-1": invalid structure of allocation schema`,
-			config: `
-partitions:
-  part-1:
-    l3Allocation: 0x12
-`,
-		},
-		// Testcase
-		TC{
 			name:        "Invalid cache ids (fail)",
 			fs:          "resctrl.nomb",
 			configErrRe: `failed to parse L3 allocation request for partition "part-1": rdt: invalid integer "a"`,
@@ -691,30 +680,6 @@ partitions:
   part-1:
     l3Allocation:
       a: 100%
-`,
-		},
-		// Testcase
-		TC{
-			name:        "L3 invalid allocation schema #1, invalid shorthand schema (fail)",
-			fs:          "resctrl.nomb",
-			configErrRe: `failed to parse L3 allocation request for partition "part-1": invalid structure of cache schema`,
-			config: `
-partitions:
-  part-1:
-    l3Allocation: [100%]
-`,
-		},
-		// Testcase
-		TC{
-			name:        "L3 invalid allocation schema #2, invalid per-type schema (fail)",
-			fs:          "resctrl.nomb",
-			configErrRe: `failed to parse L3 allocation request for partition "part-1": not a string value`,
-			config: `
-partitions:
-  part-1:
-    l3Allocation:
-      all:
-        unified: [100%]
 `,
 		},
 		// Testcase
@@ -769,7 +734,7 @@ partitions:
     l3Allocation: 100%
     classes:
       class-1:
-        l3schema: 20%
+        l3Allocation: 20%
 `,
 		},
 		// Testcase
@@ -786,8 +751,8 @@ partitions:
     mbAllocation: [100%]
     classes:
       class-1:
-        l3schema: 0-7
-        mbschema: [50%]
+        l3Allocation: 0-7
+        mbAllocation: [50%]
 `,
 			schemata: map[string]Schemata{
 				"class-1": Schemata{
@@ -809,7 +774,7 @@ partitions:
     mbAllocation: [100%]
     classes:
       class-1:
-        mbschema: [50%]
+        mbAllocation: [50%]
 `,
 		},
 		// Testcase
@@ -848,11 +813,11 @@ partitions:
     l3Allocation: 100%
     classes:
       class-1:
-        l3schema:
+        l3Allocation:
             all: 100%
             1: 50%
       class-2:
-        l3schema:
+        l3Allocation:
             all: 50%
             1: "0x7"
             2: "1-2"
@@ -1028,7 +993,7 @@ partitions:
     l3Allocation: "0xff00"
     classes:
       class-1:
-        l3schema: "0x1ff"
+        l3Allocation: "0x1ff"
 `,
 		},
 		// Testcase
@@ -1041,7 +1006,7 @@ partitions:
     l3Allocation: "100%"
     classes:
       class-1:
-        l3schema:
+        l3Allocation:
           all: "1%"
           1-2: "99-100%"
 `,
@@ -1065,7 +1030,7 @@ partitions:
     l3Allocation: "0xff00"
     classes:
       class-1:
-        l3schema: "0x1ff"
+        l3Allocation: "0x1ff"
 `,
 		},
 		// Testcase
@@ -1079,7 +1044,7 @@ partitions:
     l3Allocation: "100%"
     classes:
       class-1:
-        l3schema: "0-101%"
+        l3Allocation: "0-101%"
 `,
 		},
 		// Testcase
@@ -1092,7 +1057,7 @@ partitions:
   part-1:
     classes:
       class-1:
-        l3schema: "100%"
+        l3Allocation: "100%"
 `,
 		},
 		// Testcase
@@ -1105,7 +1070,7 @@ partitions:
     mbAllocation: ["1%"]
     classes:
       class-1:
-        mbSchema: ["100%"]
+        mbAllocation: ["100%"]
 `,
 			schemata: map[string]Schemata{
 				"class-1": Schemata{
@@ -1188,14 +1153,14 @@ partitions:
     l3Allocation: 50%
     classes:
       class-2:
-        l2Schema:
+        l2Allocation:
           all: 80%
           2:
             unified: 80%
             code: 60%
             data: 90%
       SYSTEM_DEFAULT:
-        l3Schema: 60%
+        l3Allocation: 60%
 
 `,
 			schemata: map[string]Schemata{
@@ -1230,7 +1195,7 @@ partitions:
     l3Allocation: 50%
     classes:
       class-1:
-        l2schema: 20%
+        l2Allocation: 20%
 `,
 			schemata: map[string]Schemata{
 				"class-1": Schemata{
@@ -1263,21 +1228,7 @@ partitions:
     mbAllocation: ["100%"]
     classes:
       class-1:
-        mbschema: ["1a%"]
-`,
-		},
-		// Testcase
-		TC{
-			name:        "MB class allocation not a list (fail)",
-			fs:          "resctrl.nol3",
-			configErrRe: `failed to resolve MB allocation for class "class-1": not a list value`,
-			config: `
-partitions:
-  part-1:
-    mbAllocation: ["100%"]
-    classes:
-      class-1:
-        mbschema: "100%"
+        mbAllocation: ["1a%"]
 `,
 		},
 		// Testcase
@@ -1301,7 +1252,7 @@ partitions:
   part-1:
     classes:
       class-1:
-        mbschema: ["100%"]
+        mbAllocation: ["100%"]
 `,
 		},
 		// Testcase
@@ -1315,7 +1266,7 @@ partitions:
     mbAllocation: ["50%", "1000MBps"]
     classes:
       class-1:
-        mbschema: ["100%", "1500MBps"]
+        mbAllocation: ["100%", "1500MBps"]
   part-2:
     mbAllocation:
       all: ["1000MBps"]
@@ -1323,7 +1274,7 @@ partitions:
       0,1: [50, "1GBps", "500MBps"]
     classes:
       class-2:
-        mbschema: ["750MBps"]
+        mbAllocation: ["750MBps"]
 `,
 			schemata: map[string]Schemata{
 				"class-1": Schemata{
@@ -1636,71 +1587,68 @@ func TestCacheAllocation(t *testing.T) {
 	}
 }
 
-func TestCatConfigParser(t *testing.T) {
-	p := newCatConfigParser(L3)
-	p.minBits = 2
-
+func TestParseCacheAllocationString(t *testing.T) {
 	// Test percentage
-	if a, err := p.parseString("10%"); err != nil {
+	if a, err := parseCacheAllocationString(2, "10%"); err != nil {
 		t.Errorf("unexpected error when parsing cache allocation: %v", err)
 	} else if a != catPctAllocation(10) {
 		t.Errorf("expected 10%% but got %d%%", a)
 	}
-	if _, err := p.parseString("1a%"); err == nil {
+	if _, err := parseCacheAllocationString(2, "1a%"); err == nil {
 		t.Errorf("unexpected success when parsing percentage cache allocation")
 	}
-	if _, err := p.parseString("101%"); err == nil {
+	if _, err := parseCacheAllocationString(2, "101%"); err == nil {
 		t.Errorf("unexpected success when parsing percentage cache allocation")
 	}
 
 	// Test percentage ranges
-	if a, err := p.parseString("10-20%"); err != nil {
+	if a, err := parseCacheAllocationString(2, "10-20%"); err != nil {
 		t.Errorf("unexpected error when parsing cache allocation: %v", err)
 	} else if a != (catPctRangeAllocation{lowPct: 10, highPct: 20}) {
 		t.Errorf("expected {10 20} but got %v", a)
 	}
-	if _, err := p.parseString("a-100%"); err == nil {
+	if _, err := parseCacheAllocationString(2, "a-100%"); err == nil {
 		t.Errorf("unexpected success when parsing percentage range cache allocation")
 	}
-	if _, err := p.parseString("0-1f%"); err == nil {
+	if _, err := parseCacheAllocationString(2, "0-1f%"); err == nil {
 		t.Errorf("unexpected success when parsing percentage range cache allocation")
 	}
-	if _, err := p.parseString("20-10%"); err == nil {
+	if _, err := parseCacheAllocationString(2, "20-10%"); err == nil {
 		t.Errorf("unexpected success when parsing percentage range cache allocation")
 	}
-	if _, err := p.parseString("20-101%"); err == nil {
+	if _, err := parseCacheAllocationString(2, "20-101%"); err == nil {
 		t.Errorf("unexpected success when parsing percentage range cache allocation")
 	}
 
 	// Test bitmask
-	if a, err := p.parseString("0xf0"); err != nil {
+	if a, err := parseCacheAllocationString(2, "0xf0"); err != nil {
 		t.Errorf("unexpected error when parsing cache allocation: %v", err)
 	} else if a != catAbsoluteAllocation(0xf0) {
 		t.Errorf("expected 0xf0 but got %#x", a)
 	}
-	if _, err := p.parseString("0x40"); err == nil {
+	if _, err := parseCacheAllocationString(2, "0x40"); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
 	}
-	if _, err := p.parseString("0x11"); err == nil {
+	if _, err := parseCacheAllocationString(2, "0x11"); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
 	}
-	if _, err := p.parseString("0xg"); err == nil {
+	if _, err := parseCacheAllocationString(2, "0xg"); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
 	}
 
 	// Test bit numbers
-	if a, err := p.parseString("3,4,5-7,8"); err != nil {
+	if a, err := parseCacheAllocationString(2, "3,4,5-7,8"); err != nil {
 		t.Errorf("unexpected error when parsing cache allocation: %v", err)
 	} else if a != catAbsoluteAllocation(0x1f8) {
 		t.Errorf("expected 0x1f8 but got %#x", a)
 	}
-	if _, err := p.parseString("3,5"); err == nil {
+	if _, err := parseCacheAllocationString(2, "3,5"); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
 	}
-	if _, err := p.parseString("1"); err == nil {
+	if _, err := parseCacheAllocationString(2, "1"); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
 	}
-	if _, err := p.parseString("3-x"); err == nil {
+	if _, err := parseCacheAllocationString(2, "3-x"); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
 	}
 }
