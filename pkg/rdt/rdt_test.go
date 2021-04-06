@@ -958,7 +958,7 @@ partitions:
 		TC{
 			name:        "L3 missing for one partition (fail)",
 			fs:          "resctrl.full",
-			configErrRe: `invalid configuration: partition "part-2" missing L3 "unified" allocation request`,
+			configErrRe: `invalid configuration: some partitions \(part-2\) missing L3 "unified" allocation request`,
 			config: `
 partitions:
   part-1:
@@ -983,7 +983,7 @@ partitions:
 		TC{
 			name:        "L3 missing cdp (fail)",
 			fs:          "resctrl.nomb",
-			configErrRe: `partition "part-2" missing L3 "code" allocation request for cache id [0-3]`,
+			configErrRe: `some partitions \(part-2\) missing L3 "code" allocation request for cache id [0-3]`,
 			config: `
 partitions:
   part-1:

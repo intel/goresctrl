@@ -618,15 +618,19 @@ func (r *cacheResolver) resolveID(id uint64) error {
 func (r *cacheResolver) resolveType(id uint64, typ catSchemaType) error {
 	// Sanity check: if any partition has l3 allocation of this schema type
 	// configured check that all other partitions have it, too
-	a := r.requests[r.partitions[0]][id].get(typ)
-	isNil := a == nil
+	nils := []string{}
 	for _, partition := range r.partitions {
-		if (r.requests[partition][id].get(typ) == nil) != isNil {
-			return fmt.Errorf("partition %q missing %s %q allocation request for cache id %d", partition, r.lvl, typ, id)
+		if r.requests[partition][id].get(typ) == nil {
+			nils = append(nils, partition)
 		}
+	}
+	if len(nils) > 0 && len(nils) != len(r.partitions) {
+		return fmt.Errorf("some partitions (%s) missing %s %q allocation request for cache id %d",
+			strings.Join(nils, ", "), r.lvl, typ, id)
 	}
 
 	// Act depending on the type of the first request in the list
+	a := r.requests[r.partitions[0]][id].get(typ)
 	switch a.(type) {
 	case catAbsoluteAllocation:
 		return r.resolveAbsolute(id, typ)
