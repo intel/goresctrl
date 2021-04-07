@@ -1,5 +1,5 @@
 /*
-Copyright 2019 Intel Corporation
+Copyright 2019-2021 Intel Corporation
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ limitations under the License.
 package rdt
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/bits"
@@ -27,20 +28,40 @@ import (
 	"github.com/intel/goresctrl/pkg/utils"
 )
 
-// Config represents the raw RDT configuration data from the configmap
+// Config is the user-specified RDT configuration
 type Config struct {
 	Options    Options `json:"options"`
 	Partitions map[string]struct {
-		L2Allocation interface{} `json:"l2Allocation"`
-		L3Allocation interface{} `json:"l3Allocation"`
-		MBAllocation interface{} `json:"mbAllocation"`
+		L2Allocation CatConfig `json:"l2Allocation"`
+		L3Allocation CatConfig `json:"l3Allocation"`
+		MBAllocation MbaConfig `json:"mbAllocation"`
 		Classes      map[string]struct {
-			L2Schema interface{} `json:"l2Schema"`
-			L3Schema interface{} `json:"l3Schema"`
-			MBSchema interface{} `json:"mbSchema"`
+			L2Allocation CatConfig `json:"l2Allocation"`
+			L3Allocation CatConfig `json:"l3Allocation"`
+			MBAllocation MbaConfig `json:"mbAllocation"`
 		} `json:"classes"`
 	} `json:"partitions"`
 }
+
+// CatConfig contains the L2 or L3 cache allocation configuration for one partition or class
+type CatConfig map[string]CacheIdCatConfig
+
+// MbaConfig contains the memory bandwidth configuration for one partition or class
+type MbaConfig map[string]CacheIdMbaConfig
+
+// CacheIdCatConfig is the cache allocation configuration for one cache id
+type CacheIdCatConfig struct {
+	Unified string
+	Code    string
+	Data    string
+}
+
+// CacheIdMbaConfig is the memory bandwidth configuration for one cache id
+type CacheIdMbaConfig []string
+
+// CacheIdAll is a special cache id used to denote a default, used as a
+// fallback for all cache ids that are not explicitly specified
+const CacheIdAll = "all"
 
 // config represents the final (parsed and resolved) runtime configuration of
 // RDT Control
@@ -437,18 +458,18 @@ func listStrToArray(str string) ([]int, error) {
 
 // resolve tries to resolve the requested configuration into a working
 // configuration
-func (raw Config) resolve() (config, error) {
+func (c *Config) resolve() (config, error) {
 	var err error
-	conf := config{Options: raw.Options}
+	conf := config{Options: c.Options}
 
-	log.DebugBlock("", "resolving configuration: |\n%s", utils.DumpJSON(raw))
+	log.DebugBlock("", "resolving configuration: |\n%s", utils.DumpJSON(c))
 
-	conf.Partitions, err = raw.resolvePartitions()
+	conf.Partitions, err = c.resolvePartitions()
 	if err != nil {
 		return conf, err
 	}
 
-	conf.Classes, err = raw.resolveClasses()
+	conf.Classes, err = c.resolveClasses()
 	if err != nil {
 		return conf, err
 	}
@@ -458,10 +479,10 @@ func (raw Config) resolve() (config, error) {
 
 // resolvePartitions tries to resolve the requested resource allocations of
 // partitions
-func (raw Config) resolvePartitions() (partitionSet, error) {
+func (c *Config) resolvePartitions() (partitionSet, error) {
 	// Initialize empty partition configuration
-	conf := make(partitionSet, len(raw.Partitions))
-	for name := range raw.Partitions {
+	conf := make(partitionSet, len(c.Partitions))
+	for name := range c.Partitions {
 		conf[name] = &partitionConfig{
 			CAT: map[cacheLevel]catSchema{
 				L2: newCatSchema(L2),
@@ -471,19 +492,19 @@ func (raw Config) resolvePartitions() (partitionSet, error) {
 	}
 
 	// Resolve L2 partition allocations
-	err := raw.resolveCatPartitions(L2, conf)
+	err := c.resolveCatPartitions(L2, conf)
 	if err != nil {
 		return nil, err
 	}
 
 	// Try to resolve L3 partition allocations
-	err = raw.resolveCatPartitions(L3, conf)
+	err = c.resolveCatPartitions(L3, conf)
 	if err != nil {
 		return nil, err
 	}
 
 	// Try to resolve MB partition allocations
-	err = raw.resolveMBPartitions(conf)
+	err = c.resolveMBPartitions(conf)
 	if err != nil {
 		return nil, err
 	}
@@ -492,27 +513,27 @@ func (raw Config) resolvePartitions() (partitionSet, error) {
 }
 
 // resolveCatPartitions tries to resolve requested cache allocations between partitions
-func (raw Config) resolveCatPartitions(lvl cacheLevel, conf partitionSet) error {
+func (c *Config) resolveCatPartitions(lvl cacheLevel, conf partitionSet) error {
 	// Resolve partitions in sorted order for reproducibility
-	names := make([]string, 0, len(raw.Partitions))
-	for name := range raw.Partitions {
+	names := make([]string, 0, len(c.Partitions))
+	for name := range c.Partitions {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 
-	parser := newCatConfigParser(lvl)
 	resolver := newCacheResolver(lvl, names)
 
-	// Parse requested allocations from raw config load the resolver
+	// Parse requested allocations from user config and load the resolver
 	for _, name := range names {
 		var allocations catSchema
 		var err error
 		switch lvl {
 		case L2:
-			allocations, err = parser.parse(raw.Partitions[name].L2Allocation)
+			allocations, err = c.Partitions[name].L2Allocation.toSchema(L2)
 		case L3:
-			allocations, err = parser.parse(raw.Partitions[name].L3Allocation)
+			allocations, err = c.Partitions[name].L3Allocation.toSchema(L3)
 		}
+
 		if err != nil {
 			return fmt.Errorf("failed to parse %s allocation request for partition %q: %v", lvl, name, err)
 		}
@@ -745,10 +766,10 @@ func (r *cacheResolver) resolveAbsolute(id uint64, typ catSchemaType) error {
 }
 
 // resolveMBPartitions tries to resolve requested MB allocations between partitions
-func (raw Config) resolveMBPartitions(conf partitionSet) error {
-	// We use percentage values directly from the raw conf
-	for name, partition := range raw.Partitions {
-		allocations, err := parseRawMBAllocations(partition.MBAllocation)
+func (c *Config) resolveMBPartitions(conf partitionSet) error {
+	// We use percentage values directly from the user conf
+	for name, partition := range c.Partitions {
+		allocations, err := partition.MBAllocation.toSchema()
 		if err != nil {
 			return fmt.Errorf("failed to resolve MB allocation for partition %q: %v", name, err)
 		}
@@ -765,12 +786,10 @@ func (raw Config) resolveMBPartitions(conf partitionSet) error {
 }
 
 // resolveClasses tries to resolve class allocations of all partitions
-func (raw Config) resolveClasses() (classSet, error) {
+func (c *Config) resolveClasses() (classSet, error) {
 	classes := make(classSet)
 
-	catL3Parser := newCatConfigParser(L3)
-	catL2Parser := newCatConfigParser(L2)
-	for bname, partition := range raw.Partitions {
+	for bname, partition := range c.Partitions {
 		for gname, class := range partition.Classes {
 			if _, ok := classes[gname]; ok {
 				return classes, fmt.Errorf("class names must be unique, %q defined multiple times", gname)
@@ -780,7 +799,7 @@ func (raw Config) resolveClasses() (classSet, error) {
 			gc := &classConfig{Partition: bname,
 				CATSchema: make(map[cacheLevel]catSchema)}
 
-			gc.CATSchema[L2], err = catL2Parser.parse(class.L2Schema)
+			gc.CATSchema[L2], err = class.L2Allocation.toSchema(L2)
 			if err != nil {
 				return classes, fmt.Errorf("failed to resolve L2 allocation for class %q: %v", gname, err)
 			}
@@ -788,7 +807,7 @@ func (raw Config) resolveClasses() (classSet, error) {
 				return classes, fmt.Errorf("L2 allocation missing from partition %q but class %q specifies L2 schema", bname, gname)
 			}
 
-			gc.CATSchema[L3], err = catL3Parser.parse(class.L3Schema)
+			gc.CATSchema[L3], err = class.L3Allocation.toSchema(L3)
 			if err != nil {
 				return classes, fmt.Errorf("failed to resolve L3 allocation for class %q: %v", gname, err)
 			}
@@ -796,7 +815,7 @@ func (raw Config) resolveClasses() (classSet, error) {
 				return classes, fmt.Errorf("L3 allocation missing from partition %q but class %q specifies L3 schema", bname, gname)
 			}
 
-			gc.MBSchema, err = parseRawMBAllocations(class.MBSchema)
+			gc.MBSchema, err = class.MBAllocation.toSchema()
 			if err != nil {
 				return classes, fmt.Errorf("failed to resolve MB allocation for class %q: %v", gname, err)
 			}
@@ -811,69 +830,123 @@ func (raw Config) resolveClasses() (classSet, error) {
 	return classes, nil
 }
 
-// parseRawMBAllocations parses a raw MB allocation
-func parseRawMBAllocations(raw interface{}) (mbSchema, error) {
-	rawValues, err := preparseRawAllocations(raw, []interface{}{}, info.mb.cacheIds)
-	if err != nil || rawValues == nil {
-		return nil, err
+// toSchema converts a cache allocation config to effective allocation schema covering all cache IDs
+func (c CatConfig) toSchema(lvl cacheLevel) (catSchema, error) {
+	if c == nil {
+		return catSchema{Lvl: lvl}, nil
 	}
 
-	allocations := make(mbSchema, len(rawValues))
-	for id, rawVal := range rawValues {
-		strList, ok := rawVal.([]interface{})
-		if !ok {
-			return nil, fmt.Errorf("not a list value %q", rawVal)
+	allocations := newCatSchema(lvl)
+	minBits := info.cat[lvl].minCbmBits()
+
+	d, ok := c[CacheIdAll]
+	if !ok {
+		d = CacheIdCatConfig{Unified: "100%"}
+	}
+	defaultVal, err := d.parse(minBits)
+	if err != nil {
+		return allocations, err
+	}
+
+	// Pre-fill with defaults
+	for _, i := range info.cat[lvl].cacheIds {
+		allocations.Alloc[i] = defaultVal
+	}
+
+	for key, val := range c {
+		if key == CacheIdAll {
+			continue
 		}
-		allocations[id], err = parseMBAllocation(strList)
+
+		ids, err := listStrToArray(key)
 		if err != nil {
-			return nil, err
+			return allocations, err
+		}
+
+		schemaVal, err := val.parse(minBits)
+		if err != nil {
+			return allocations, err
+		}
+
+		for _, id := range ids {
+			if _, ok := allocations.Alloc[uint64(id)]; ok {
+				allocations.Alloc[uint64(id)] = schemaVal
+			}
 		}
 	}
 
 	return allocations, nil
 }
 
-// preparseRawAllocations "pre-parses" the rawAllocations per each cache id. I.e. it assigns
-// a raw (string) allocation for each cache id
-func preparseRawAllocations(raw interface{}, defaultVal interface{}, cacheIds []uint64) (map[uint64]interface{}, error) {
-	if raw == nil {
+// catConfig is a helper for unmarshalling CatConfig
+type catConfig CatConfig
+
+// UnmarshalJSON implements the Unmarshaler interface of "encoding/json"
+func (c *CatConfig) UnmarshalJSON(data []byte) error {
+	raw := new(interface{})
+
+	err := json.Unmarshal(data, raw)
+	if err != nil {
+		return err
+	}
+
+	conf := CatConfig{}
+	switch v := (*raw).(type) {
+	case string:
+		conf[CacheIdAll] = CacheIdCatConfig{Unified: v}
+	default:
+		// Use the helper type to avoid infinite recursion
+		helper := catConfig{}
+		if err := json.Unmarshal(data, &helper); err != nil {
+			return err
+		}
+		for k, v := range helper {
+			conf[k] = v
+		}
+	}
+	*c = conf
+	return nil
+}
+
+// toSchema converts an MB allocation config to effective allocation schema covering all cache IDs
+func (c MbaConfig) toSchema() (mbSchema, error) {
+	if c == nil {
 		return nil, nil
 	}
 
-	var rawPerCacheId map[string]interface{}
-	allocations := make(map[uint64]interface{}, len(cacheIds))
-
-	switch value := raw.(type) {
-	case string:
-		defaultVal = value
-	case []interface{}:
-		defaultVal = value
-	case map[string]interface{}:
-		if all, ok := value["all"]; ok {
-			defaultVal = all
-		} else if defaultVal == nil {
-			return nil, fmt.Errorf("'all' is missing")
-		}
-		rawPerCacheId = value
-	default:
-		return allocations, fmt.Errorf("invalid structure of allocation schema '%v' (%T)", raw, raw)
+	d, ok := c[CacheIdAll]
+	if !ok {
+		d = CacheIdMbaConfig{"100" + mbSuffixPct, "4294967295" + mbSuffixMbps}
+	}
+	defaultVal, err := d.parse()
+	if err != nil {
+		return nil, err
 	}
 
-	for _, i := range cacheIds {
+	allocations := make(mbSchema, len(info.mb.cacheIds))
+	// Pre-fill with defaults
+	for _, i := range info.mb.cacheIds {
 		allocations[i] = defaultVal
 	}
 
-	for key, val := range rawPerCacheId {
-		if key == "all" {
+	for key, val := range c {
+		if key == CacheIdAll {
 			continue
 		}
+
 		ids, err := listStrToArray(key)
 		if err != nil {
 			return nil, err
 		}
+
+		schemaVal, err := val.parse()
+		if err != nil {
+			return nil, err
+		}
+
 		for _, id := range ids {
 			if _, ok := allocations[uint64(id)]; ok {
-				allocations[uint64(id)] = val
+				allocations[uint64(id)] = schemaVal
 			}
 		}
 	}
@@ -881,87 +954,141 @@ func preparseRawAllocations(raw interface{}, defaultVal interface{}, cacheIds []
 	return allocations, nil
 }
 
-// catConfigParser is a helper for parsing cache allocation from the input config
-type catConfigParser struct {
-	lvl     cacheLevel
-	ids     []uint64
-	minBits uint64
-}
+// mbaConfig is a helper for unmarshalling MbaConfig
+type mbaConfig MbaConfig
 
-func newCatConfigParser(lvl cacheLevel) *catConfigParser {
-	return &catConfigParser{
-		lvl:     lvl,
-		ids:     info.cat[lvl].cacheIds,
-		minBits: info.cat[lvl].minCbmBits()}
-}
+// UnmarshalJSON implements the Unmarshaler interface of "encoding/json"
+func (c *MbaConfig) UnmarshalJSON(data []byte) error {
+	raw := new(interface{})
 
-// parse parses an L3 cache allocation from the input config
-func (p *catConfigParser) parse(raw interface{}) (catSchema, error) {
-	rawValues, err := preparseRawAllocations(raw, "100%", p.ids)
-	if err != nil || rawValues == nil {
-		return catSchema{Lvl: p.lvl}, err
+	err := json.Unmarshal(data, raw)
+	if err != nil {
+		return err
 	}
 
-	allocations := newCatSchema(p.lvl)
-	for id, rawVal := range rawValues {
-		allocations.Alloc[id], err = p.parseSchema(rawVal)
-		if err != nil {
-			return allocations, err
+	conf := MbaConfig{}
+	switch (*raw).(type) {
+	case []interface{}:
+		helper := CacheIdMbaConfig{}
+		if err := json.Unmarshal(data, &helper); err != nil {
+			return err
+		}
+		conf[CacheIdAll] = helper
+	default:
+		// Use the helper type to avoid infinite recursion
+		helper := mbaConfig{}
+		if err := json.Unmarshal(data, &helper); err != nil {
+			return err
+		}
+		for k, v := range helper {
+			conf[k] = v
 		}
 	}
-
-	return allocations, nil
+	*c = conf
+	return nil
 }
 
-// parseSchema parses a generic string or map of strings into l3Allocation struct
-func (p *catConfigParser) parseSchema(raw interface{}) (catAllocation, error) {
+// parse per cache-id CAT configuration into an effective allocation to be used
+// in the CAT schema
+func (c *CacheIdCatConfig) parse(minBits uint64) (catAllocation, error) {
 	var err error
 	allocation := catAllocation{}
 
-	switch value := raw.(type) {
-	case string:
-		allocation.Unified, err = p.parseString(value)
-		if err != nil {
-			return allocation, err
-		}
-	case map[string]interface{}:
-		for k, v := range value {
-			s, ok := v.(string)
-			if !ok {
-				return allocation, fmt.Errorf("not a string value %q", v)
-			}
-			switch strings.ToLower(k) {
-			case string(catSchemaTypeUnified):
-				allocation.Unified, err = p.parseString(s)
-			case string(catSchemaTypeCode):
-				allocation.Code, err = p.parseString(s)
-			case string(catSchemaTypeData):
-				allocation.Data, err = p.parseString(s)
-			}
-			if err != nil {
-				return allocation, err
-			}
-		}
-	default:
-		return allocation, fmt.Errorf("invalid structure of cache schema %q", raw)
+	allocation.Unified, err = parseCacheAllocationString(minBits, c.Unified)
+	if err != nil {
+		return allocation, err
+	}
+	allocation.Code, err = parseCacheAllocationString(minBits, c.Code)
+	if err != nil {
+		return allocation, err
+	}
+	allocation.Data, err = parseCacheAllocationString(minBits, c.Data)
+	if err != nil {
+		return allocation, err
 	}
 
 	// Sanity check for the configuration
 	if allocation.Unified == nil {
-		return allocation, fmt.Errorf("'unified' not specified in cache schema %s", raw)
+		return allocation, fmt.Errorf("'unified' not specified in cache schema %s", *c)
 	}
 	if allocation.Code != nil && allocation.Data == nil {
-		return allocation, fmt.Errorf("'code' specified but missing 'data' from cache schema %s", raw)
+		return allocation, fmt.Errorf("'code' specified but missing 'data' from cache schema %s", *c)
 	}
 	if allocation.Code == nil && allocation.Data != nil {
-		return allocation, fmt.Errorf("'data' specified but missing 'code' from cache schema %s", raw)
+		return allocation, fmt.Errorf("'data' specified but missing 'code' from cache schema %s", *c)
 	}
 
 	return allocation, nil
 }
 
-// parseString parses a string value into cacheAllocation type
-func (p *catConfigParser) parseString(data string) (cacheAllocation, error) {
+// cacheIdCatConfig is a helper for unmarshalling CacheIdCatConfig
+type cacheIdCatConfig CacheIdCatConfig
+
+// UnmarshalJSON implements the Unmarshaler interface of "encoding/json"
+func (c *CacheIdCatConfig) UnmarshalJSON(data []byte) error {
+	raw := new(interface{})
+
+	err := json.Unmarshal(data, raw)
+	if err != nil {
+		return err
+	}
+
+	conf := CacheIdCatConfig{}
+	switch v := (*raw).(type) {
+	case string:
+		conf.Unified = v
+	default:
+		// Use the helper type to avoid infinite recursion
+		helper := cacheIdCatConfig{}
+		if err := json.Unmarshal(data, &helper); err != nil {
+			return err
+		}
+		conf.Unified = helper.Unified
+		conf.Code = helper.Code
+		conf.Data = helper.Data
+	}
+	*c = conf
+	return nil
+}
+
+// parse converts a per cache-id MBA configuration into effective value
+// to be used in the MBA schema
+func (c *CacheIdMbaConfig) parse() (uint64, error) {
+	for _, v := range *c {
+		if strings.HasSuffix(v, mbSuffixPct) {
+			if !info.mb.mbpsEnabled {
+				value, err := strconv.ParseUint(strings.TrimSuffix(v, mbSuffixPct), 10, 7)
+				if err != nil {
+					return 0, err
+				}
+				return value, nil
+			}
+		} else if strings.HasSuffix(v, mbSuffixMbps) {
+			if info.mb.mbpsEnabled {
+				value, err := strconv.ParseUint(strings.TrimSuffix(v, mbSuffixMbps), 10, 32)
+				if err != nil {
+					return 0, err
+				}
+				return value, nil
+			}
+		} else {
+			log.Warn("unrecognized MBA allocation unit in %q", v)
+		}
+	}
+
+	// No value for the active mode was specified
+	if info.mb.mbpsEnabled {
+		return 0, fmt.Errorf("missing 'MBps' value from mbSchema; required because 'mba_MBps' is enabled in the system")
+	}
+	return 0, fmt.Errorf("missing '%%' value from mbSchema; required because percentage-based MBA allocation is enabled in the system")
+}
+
+// parseCacheAllocationString converts a string value into cacheAllocation type
+func parseCacheAllocationString(minBits uint64, data string) (cacheAllocation, error) {
+	if data == "" {
+		return nil, nil
+	}
+
 	if data[len(data)-1] == '%' {
 		// Percentages of the max number of bits
 		split := strings.SplitN(data[0:len(data)-1], "-", 2)
@@ -1018,45 +1145,9 @@ func (p *catConfigParser) parseString(data string) (cacheAllocation, error) {
 	if numOnes != 64-bits.LeadingZeros64(value)-bits.TrailingZeros64(value) {
 		return nil, fmt.Errorf("invalid cache bitmask %q: more than one continuous block of ones", data)
 	}
-	if uint64(numOnes) < p.minBits {
-		return nil, fmt.Errorf("invalid %s cache bitmask %q: number of bits less than %d", p.lvl, data, p.minBits)
+	if uint64(numOnes) < minBits {
+		return nil, fmt.Errorf("invalid cache bitmask %q: number of bits less than %d", data, minBits)
 	}
 
 	return catAbsoluteAllocation(value), nil
-}
-
-// parseMBAllocation parses a generic string map into MB allocation value
-func parseMBAllocation(raw []interface{}) (uint64, error) {
-	for _, v := range raw {
-		strVal, ok := v.(string)
-		if !ok {
-			log.Warn("ignoring non-string (%T) MBA allocation %v", v, v)
-			continue
-		}
-		if strings.HasSuffix(strVal, mbSuffixPct) {
-			if !info.mb.mbpsEnabled {
-				value, err := strconv.ParseUint(strings.TrimSuffix(strVal, mbSuffixPct), 10, 7)
-				if err != nil {
-					return 0, err
-				}
-				return value, nil
-			}
-		} else if strings.HasSuffix(strVal, mbSuffixMbps) {
-			if info.mb.mbpsEnabled {
-				value, err := strconv.ParseUint(strings.TrimSuffix(strVal, mbSuffixMbps), 10, 32)
-				if err != nil {
-					return 0, err
-				}
-				return value, nil
-			}
-		} else {
-			log.Warn("unrecognized MBA allocation unit in %q", strVal)
-		}
-	}
-
-	// No value for the active mode was specified
-	if info.mb.mbpsEnabled {
-		return 0, fmt.Errorf("missing 'MBps' value from mbSchema; required because 'mba_MBps' is enabled in the system")
-	}
-	return 0, fmt.Errorf("missing '%%' value from mbSchema; required because percentage-based MBA allocation is enabled in the system")
 }
