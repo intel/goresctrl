@@ -28,6 +28,8 @@ import (
 	"strings"
 	"syscall"
 
+	"sigs.k8s.io/yaml"
+
 	grclog "github.com/intel/goresctrl/pkg/log"
 	"github.com/intel/goresctrl/pkg/utils"
 )
@@ -197,6 +199,33 @@ func SetConfig(c *Config, force bool) error {
 		return rdt.setConfig(c, force)
 	}
 	return rdtError("rdt not initialized")
+}
+
+// SetConfigFromData takes configuration as raw data, parses it and
+// reconfigures the resctrl filesystem
+func SetConfigFromData(data []byte, force bool) error {
+	cfg := &Config{}
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("failed to parse configuration data: %v", err)
+	}
+
+	return SetConfig(cfg, force)
+}
+
+// SetConfigFromFile reads configuration from the filesystem and reconfigures
+// the resctrl filesystem
+func SetConfigFromFile(path string, force bool) error {
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %v", err)
+	}
+
+	if err := SetConfigFromData(data, force); err != nil {
+		return err
+	}
+
+	log.Info("configuration successfully loaded from %q", path)
+	return nil
 }
 
 // GetClass returns one RDT class

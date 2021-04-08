@@ -115,6 +115,20 @@ func parseTestConfig(t *testing.T, data string) *Config {
 	return c
 }
 
+func createTempConfigFile(t *testing.T, data string) string {
+	f, err := ioutil.TempFile("", "goresctrl-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return f.Name()
+}
+
 // TestRdt tests the rdt public API, i.e. exported functionality of the package
 func TestRdt(t *testing.T) {
 	const rdtTestConfig string = `
@@ -206,7 +220,6 @@ partitions:
 	}
 	defer mockFs.delete()
 
-	conf := parseTestConfig(t, rdtTestConfig)
 	if err := Initialize(mockGroupPrefix); err != nil {
 		t.Fatalf("rdt initialization failed: %v", err)
 	}
@@ -224,12 +237,22 @@ partitions:
 		t.Fatalf("AddPids() failed: %v", err)
 	}
 
+	// Invalid test config content should cause an error
+	if err := SetConfigFromData([]byte("partitions: foo"), true); err == nil {
+		t.Fatalf("rdt configuration with invalid file succeeded unexpetedly")
+	}
+	// Non-existent configuration file should cause an error
+	if err := SetConfigFromFile("non-existent-config-file", true); err == nil {
+		t.Fatalf("rdt configuration with non-existent file succeeded unexpetedly")
+	}
 	// Configuration should fail as "Stale" class has pids assigned to it
-	if err := SetConfig(conf, false); err == nil {
+	testConfigFile := createTempConfigFile(t, rdtTestConfig)
+	defer os.Remove(testConfigFile)
+	if err := SetConfigFromFile(testConfigFile, false); err == nil {
 		t.Fatalf("rdt configuration succeeded unexpetedly")
 	}
 	// Forced configuration should succeed
-	if err := SetConfig(conf, true); err != nil {
+	if err := SetConfigFromFile(testConfigFile, true); err != nil {
 		t.Fatalf("rdt forced configuration failed: %v", err)
 	}
 
