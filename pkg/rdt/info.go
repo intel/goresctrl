@@ -101,14 +101,14 @@ func getRdtInfo() (*resctrlInfo, error) {
 
 	info.resctrlPath, info.resctrlMountOpts, err = getResctrlMountInfo()
 	if err != nil {
-		return info, rdtError("failed to detect resctrl mount point: %v", err)
+		return info, fmt.Errorf("failed to detect resctrl mount point: %v", err)
 	}
 	log.Info("detected resctrl filesystem at %q", info.resctrlPath)
 
 	// Check that RDT is available
 	infopath := filepath.Join(info.resctrlPath, "info")
 	if _, err := os.Stat(infopath); err != nil {
-		return info, rdtError("failed to read RDT info from %q: %v", infopath, err)
+		return info, fmt.Errorf("failed to read RDT info from %q: %v", infopath, err)
 	}
 
 	// Check CAT feature available
@@ -125,14 +125,14 @@ func getRdtInfo() (*resctrlInfo, error) {
 			if _, err = os.Stat(subpath); err == nil {
 				*i, info.numClosids, err = getCatInfo(subpath)
 				if err != nil {
-					return info, rdtError("failed to get %s info from %q: %v", dir, subpath, err)
+					return info, fmt.Errorf("failed to get %s info from %q: %v", dir, subpath, err)
 				}
 			}
 		}
 		if cat.getInfo().Supported() {
 			cat.cacheIds, err = getCacheIds(info.resctrlPath, string(cl))
 			if err != nil {
-				return info, rdtError("failed to get %s CAT cache IDs: %v", cl, err)
+				return info, fmt.Errorf("failed to get %s CAT cache IDs: %v", cl, err)
 			}
 		}
 		info.cat[cl] = cat
@@ -143,7 +143,7 @@ func getRdtInfo() (*resctrlInfo, error) {
 	if _, err = os.Stat(subpath); err == nil {
 		info.l3mon, err = getL3MonInfo(subpath)
 		if err != nil {
-			return info, rdtError("failed to get L3_MON info from %q: %v", subpath, err)
+			return info, fmt.Errorf("failed to get L3_MON info from %q: %v", subpath, err)
 		}
 	}
 
@@ -152,12 +152,12 @@ func getRdtInfo() (*resctrlInfo, error) {
 	if _, err = os.Stat(subpath); err == nil {
 		info.mb, info.numClosids, err = getMBInfo(subpath)
 		if err != nil {
-			return info, rdtError("failed to get MBA info from %q: %v", subpath, err)
+			return info, fmt.Errorf("failed to get MBA info from %q: %v", subpath, err)
 		}
 
 		info.mb.cacheIds, err = getCacheIds(info.resctrlPath, "MB")
 		if err != nil {
-			return info, rdtError("failed to get MBA cache IDs: %v", err)
+			return info, fmt.Errorf("failed to get MBA cache IDs: %v", err)
 		}
 	}
 
@@ -264,7 +264,7 @@ func getCacheIds(basepath string, prefix string) ([]uint64, error) {
 	// Parse cache IDs from the root schemata
 	data, err := readFileString(filepath.Join(basepath, "schemata"))
 	if err != nil {
-		return ids, rdtError("failed to read root schemata: %v", err)
+		return ids, fmt.Errorf("failed to read root schemata: %v", err)
 	}
 
 	for _, line := range strings.Split(data, "\n") {
@@ -280,17 +280,17 @@ func getCacheIds(basepath string, prefix string) ([]uint64, error) {
 			for idx, definition := range schema {
 				split := strings.Split(definition, "=")
 				if len(split) != 2 {
-					return ids, rdtError("looks like an invalid schema %q", trimmed)
+					return ids, fmt.Errorf("looks like an invalid schema %q", trimmed)
 				}
 				ids[idx], err = strconv.ParseUint(split[0], 10, 64)
 				if err != nil {
-					return ids, rdtError("failed to parse cache id in %q: %v", trimmed, err)
+					return ids, fmt.Errorf("failed to parse cache id in %q: %v", trimmed, err)
 				}
 			}
 			return ids, nil
 		}
 	}
-	return ids, rdtError("no %s resources in root schemata", prefix)
+	return ids, fmt.Errorf("no %s resources in root schemata", prefix)
 }
 
 func getResctrlMountInfo() (string, map[string]struct{}, error) {
@@ -313,7 +313,7 @@ func getResctrlMountInfo() (string, map[string]struct{}, error) {
 			return split[1], mountOptions, nil
 		}
 	}
-	return "", mountOptions, rdtError("resctrl not found in " + mountInfoPath)
+	return "", mountOptions, fmt.Errorf("resctrl not found in " + mountInfoPath)
 }
 
 func readFileUint64(path string) (uint64, error) {

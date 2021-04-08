@@ -278,7 +278,7 @@ func (a catAbsoluteAllocation) Overlay(baseMask Bitmask, minBits uint64) (Bitmas
 
 	// Do bounds checking that we're "inside" the base mask
 	if bitmask|baseMask != baseMask {
-		return 0, rdtError("bitmask %#x (%#x << %d) does not fit basemask %#x", bitmask, a, shiftWidth, baseMask)
+		return 0, fmt.Errorf("bitmask %#x (%#x << %d) does not fit basemask %#x", bitmask, a, shiftWidth, baseMask)
 	}
 
 	return bitmask, nil
@@ -309,7 +309,7 @@ func (a catPctRangeAllocation) Overlay(baseMask Bitmask, minBits uint64) (Bitmas
 		low = 1
 	}
 	if low > high || low > 100 || high > 100 {
-		return 0, rdtError("invalid percentage range in %v", a)
+		return 0, fmt.Errorf("invalid percentage range in %v", a)
 	}
 
 	// Convert percentage limits to bit numbers
@@ -336,7 +336,7 @@ func (a catPctRangeAllocation) Overlay(baseMask Bitmask, minBits uint64) (Bitmas
 		if gap <= msbAvailable {
 			msb += gap
 		} else {
-			return 0, rdtError("BUG: not enough bits available for cache bitmask (%s applied on basemask %#x)", a, baseMask)
+			return 0, fmt.Errorf("BUG: not enough bits available for cache bitmask (%v applied on basemask %#x)", a, baseMask)
 		}
 	}
 
@@ -434,7 +434,7 @@ func listStrToArray(str string) ([]int, error) {
 		// We limit to 8 bits in order to avoid accidental super long slices
 		num, err := strconv.ParseInt(split[0], 10, 8)
 		if err != nil {
-			return a, rdtError("invalid integer %q: %v", str, err)
+			return a, fmt.Errorf("invalid integer %q: %v", str, err)
 		}
 
 		if len(split) == 1 {
@@ -442,10 +442,10 @@ func listStrToArray(str string) ([]int, error) {
 		} else {
 			endNum, err := strconv.ParseInt(split[1], 10, 8)
 			if err != nil {
-				return a, rdtError("invalid integer in range %q: %v", str, err)
+				return a, fmt.Errorf("invalid integer in range %q: %v", str, err)
 			}
 			if endNum <= num {
-				return a, rdtError("invalid integer range %q in %q", ran, str)
+				return a, fmt.Errorf("invalid integer range %q in %q", ran, str)
 			}
 			for i := num; i <= endNum; i++ {
 				a = append(a, int(i))

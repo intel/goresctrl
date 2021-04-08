@@ -674,7 +674,7 @@ partitions:
 		TC{
 			name:        "Invalid cache ids (fail)",
 			fs:          "resctrl.nomb",
-			configErrRe: `failed to parse L3 allocation request for partition "part-1": rdt: invalid integer "a"`,
+			configErrRe: `failed to parse L3 allocation request for partition "part-1": invalid integer "a"`,
 			config: `
 partitions:
   part-1:
