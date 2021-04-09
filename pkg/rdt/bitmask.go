@@ -82,7 +82,7 @@ func ListStrToBitmask(str string) (Bitmask, error) {
 
 		bitNum, err := strconv.ParseUint(split[0], 10, 6)
 		if err != nil {
-			return b, rdtError("invalid bitmask %q: %v", str, err)
+			return b, fmt.Errorf("invalid bitmask %q: %v", str, err)
 		}
 
 		if len(split) == 1 {
@@ -90,10 +90,10 @@ func ListStrToBitmask(str string) (Bitmask, error) {
 		} else {
 			endNum, err := strconv.ParseUint(split[1], 10, 6)
 			if err != nil {
-				return b, rdtError("invalid bitmask %q: %v", str, err)
+				return b, fmt.Errorf("invalid bitmask %q: %v", str, err)
 			}
 			if endNum <= bitNum {
-				return b, rdtError("invalid range %q in bitmask %q", ran, str)
+				return b, fmt.Errorf("invalid range %q in bitmask %q", ran, str)
 			}
 			b |= (1<<(endNum-bitNum+1) - 1) << bitNum
 		}

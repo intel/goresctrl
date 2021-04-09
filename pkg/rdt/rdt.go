@@ -168,7 +168,7 @@ func Initialize(resctrlGroupPrefix string) error {
 	// NOTE: we lose monitoring group annotations (i.e. prometheus metrics
 	// labels) on re-init
 	if r.classes, err = r.classesFromResctrlFs(); err != nil {
-		return rdtError("failed to initialize classes from resctrl fs", err)
+		return fmt.Errorf("failed to initialize classes from resctrl fs: %v", err)
 	}
 
 	if err := r.pruneMonGroups(); err != nil {
@@ -187,7 +187,7 @@ func DiscoverClasses(resctrlGroupPrefix string) error {
 	if rdt != nil {
 		return rdt.discoverFromResctrl(resctrlGroupPrefix)
 	}
-	return rdtError("rdt not initialized")
+	return fmt.Errorf("rdt not initialized")
 }
 
 // SetConfig parses new configuration and reconfigures the resctrl filesystem
@@ -196,7 +196,7 @@ func SetConfig(c *Config, force bool) error {
 	if rdt != nil {
 		return rdt.setConfig(c, force)
 	}
-	return rdtError("rdt not initialized")
+	return fmt.Errorf("rdt not initialized")
 }
 
 // GetClass returns one RDT class
@@ -269,12 +269,12 @@ func (c *control) setConfig(newConfig *Config, force bool) error {
 
 	conf, err := (*newConfig).resolve()
 	if err != nil {
-		return rdtError("invalid configuration: %v", err)
+		return fmt.Errorf("invalid configuration: %v", err)
 	}
 
 	err = c.configureResctrl(conf, force)
 	if err != nil {
-		return rdtError("resctrl configuration failed: %v", err)
+		return fmt.Errorf("resctrl configuration failed: %v", err)
 	}
 
 	c.conf = conf
@@ -299,16 +299,16 @@ func (c *control) configureResctrl(conf config, force bool) error {
 			if !force {
 				tasks, err := cls.GetPids()
 				if err != nil {
-					return rdtError("failed to get resctrl group tasks: %v", err)
+					return fmt.Errorf("failed to get resctrl group tasks: %v", err)
 				}
 				if len(tasks) > 0 {
-					return rdtError("refusing to remove non-empty resctrl group %q", cls.relPath(""))
+					return fmt.Errorf("refusing to remove non-empty resctrl group %q", cls.relPath(""))
 				}
 			}
 			log.Debug("removing existing resctrl group %q", cls.relPath(""))
 			err = groupRemoveFunc(cls.path(""))
 			if err != nil {
-				return rdtError("failed to remove resctrl group %q: %v", cls.relPath(""), err)
+				return fmt.Errorf("failed to remove resctrl group %q: %v", cls.relPath(""), err)
 			}
 
 			delete(c.classes, name)
@@ -418,7 +418,7 @@ func (c *control) classesFromResctrlFsPrefix(prefix string) (map[string]*ctrlGro
 func (c *control) pruneMonGroups() error {
 	for name, cls := range c.classes {
 		if err := cls.pruneMonGroups(); err != nil {
-			return rdtError("failed to prune stale monitoring groups of %q: %v", name, err)
+			return fmt.Errorf("failed to prune stale monitoring groups of %q: %v", name, err)
 		}
 	}
 	return nil
@@ -491,7 +491,7 @@ func (c *ctrlGroup) DeleteMonGroup(name string) error {
 
 	log.Debug("deleting monitoring group %s/%s", c.name, name)
 	if err := groupRemoveFunc(mg.path("")); err != nil {
-		return rdtError("failed to remove monitoring group %q: %v", mg.relPath(""), err)
+		return fmt.Errorf("failed to remove monitoring group %q: %v", mg.relPath(""), err)
 	}
 
 	delete(c.monGroups, name)
@@ -551,7 +551,7 @@ func (c *ctrlGroup) configure(name string, class *classConfig,
 			schemata += schema
 		default:
 			if class.CATSchema[lvl].Alloc != nil && !options.Cat(lvl).Optional {
-				return rdtError("%s cache allocation for %q specified in configuration but not supported by system", lvl, name)
+				return fmt.Errorf("%s cache allocation for %q specified in configuration but not supported by system", lvl, name)
 			}
 		}
 	}
@@ -562,7 +562,7 @@ func (c *ctrlGroup) configure(name string, class *classConfig,
 		schemata += class.MBSchema.ToStr(partition.MB)
 	default:
 		if class.MBSchema != nil && !options.MB.Optional {
-			return rdtError("memory bandwidth allocation for %q specified in configuration but not supported by system", name)
+			return fmt.Errorf("memory bandwidth allocation for %q specified in configuration but not supported by system", name)
 		}
 	}
 
@@ -640,7 +640,7 @@ func (r *resctrlGroup) AddPids(pids ...string) error {
 			if errors.Is(err, syscall.ESRCH) {
 				log.Debug("no task %s", pid)
 			} else {
-				return rdtError("failed to assign processes %v to class %q: %v", pids, r.name, rdt.cmdError(err))
+				return fmt.Errorf("failed to assign processes %v to class %q: %v", pids, r.name, rdt.cmdError(err))
 			}
 		}
 	}
@@ -776,8 +776,4 @@ func resctrlGroupsFromFs(prefix string, path string) ([]string, error) {
 		}
 	}
 	return grps, nil
-}
-
-func rdtError(format string, args ...interface{}) error {
-	return fmt.Errorf("rdt: "+format, args...)
 }
