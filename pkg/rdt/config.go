@@ -791,6 +791,10 @@ func (c *Config) resolveClasses() (classSet, error) {
 
 	for bname, partition := range c.Partitions {
 		for gname, class := range partition.Classes {
+			if isRootClass(gname) {
+				gname = RootClassName
+			}
+
 			if _, ok := classes[gname]; ok {
 				return classes, fmt.Errorf("class names must be unique, %q defined multiple times", gname)
 			}
