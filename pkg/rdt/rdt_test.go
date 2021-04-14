@@ -257,9 +257,10 @@ partitions:
 	}
 
 	// Check that SetLogger() takes effect in the control interface, too
-	SetLogger(grclog.NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt-test-2 ] ", 0)))
-	if p := rdt.Logger.Prefix(); p != "[ rdt-test-2 ] " {
-		t.Errorf("unexpected logger prefix %q", p)
+	l := grclog.NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt-test-2 ] ", 0))
+	SetLogger(l)
+	if l != rdt.Logger {
+		t.Errorf("unexpected logger implementation")
 	}
 
 	// Check that the path() and relPath() methods work correctly

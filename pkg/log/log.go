@@ -24,15 +24,12 @@ import (
 
 // Logger is the logging interface for goresctl
 type Logger interface {
-	Debug(format string, v ...interface{})
-	Info(format string, v ...interface{})
-	Warn(format string, v ...interface{})
-	Error(format string, v ...interface{})
-	Panic(format string, v ...interface{})
-	Fatal(format string, v ...interface{})
-	DebugBlock(prefix, format string, v ...interface{})
-	InfoBlock(prefix, format string, v ...interface{})
-	Prefix() string
+	Debugf(format string, v ...interface{})
+	Infof(format string, v ...interface{})
+	Warnf(format string, v ...interface{})
+	Errorf(format string, v ...interface{})
+	Panicf(format string, v ...interface{})
+	Fatalf(format string, v ...interface{})
 }
 
 type logger struct {
@@ -45,47 +42,44 @@ func NewLoggerWrapper(l *stdlog.Logger) Logger {
 	return &logger{Logger: l}
 }
 
-func (l *logger) Debug(format string, v ...interface{}) {
+func (l *logger) Debugf(format string, v ...interface{}) {
 	l.Logger.Printf("DEBUG: "+format, v...)
 }
 
-func (l *logger) Info(format string, v ...interface{}) {
+func (l *logger) Infof(format string, v ...interface{}) {
 	l.Logger.Printf("INFO: "+format, v...)
 }
 
-func (l *logger) Warn(format string, v ...interface{}) {
+func (l *logger) Warnf(format string, v ...interface{}) {
 	l.Logger.Printf("WARN: "+format, v...)
 }
 
-func (l *logger) Error(format string, v ...interface{}) {
+func (l *logger) Errorf(format string, v ...interface{}) {
 	l.Logger.Printf("ERROR: "+format, v...)
 }
 
-func (l *logger) Panic(format string, v ...interface{}) {
+func (l *logger) Panicf(format string, v ...interface{}) {
 	l.Logger.Panicf(format, v...)
 }
 
-func (l *logger) Fatal(format string, v ...interface{}) {
+func (l *logger) Fatalf(format string, v ...interface{}) {
 	l.Logger.Fatalf(format, v...)
 }
 
-func (l *logger) DebugBlock(prefix, format string, v ...interface{}) {
-	l.blockPrint("DEBUG: ", prefix, format, v...)
+func InfoBlock(l Logger, heading, linePrefix, format string, v ...interface{}) {
+	l.Infof("%s", heading)
+
+	lines := strings.Split(fmt.Sprintf(format, v...), "\n")
+	for _, line := range lines {
+		l.Infof("%s%s", linePrefix, line)
+	}
 }
 
-func (l *logger) InfoBlock(prefix, format string, v ...interface{}) {
-	l.blockPrint("INFO: ", prefix, format, v...)
-}
+func DebugBlock(l Logger, heading, linePrefix, format string, v ...interface{}) {
+	l.Debugf("%s", heading)
 
-func (l *logger) blockPrint(levelPrefix, linePrefix, format string, v ...interface{}) {
-	msg := levelPrefix + linePrefix + fmt.Sprintf(format, v...)
-
-	lines := strings.Split(msg, "\n")
-
-	p := strings.Repeat(" ", len(l.Logger.Prefix())+len(levelPrefix)) + linePrefix
-	l.Logger.Print(strings.Join(lines, "\n"+p))
-}
-
-func (l *logger) Prefix() string {
-	return l.Logger.Prefix()
+	lines := strings.Split(fmt.Sprintf(format, v...), "\n")
+	for _, line := range lines {
+		l.Debugf("%s%s", linePrefix, line)
+	}
 }

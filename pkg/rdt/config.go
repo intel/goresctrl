@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 
+	grclog "github.com/intel/goresctrl/pkg/log"
 	"github.com/intel/goresctrl/pkg/utils"
 )
 
@@ -462,7 +463,7 @@ func (c *Config) resolve() (config, error) {
 	var err error
 	conf := config{Options: c.Options}
 
-	log.DebugBlock("", "resolving configuration: |\n%s", utils.DumpJSON(c))
+	grclog.DebugBlock(log, "resolving configuration:", "  ", "%s", utils.DumpJSON(c))
 
 	conf.Partitions, err = c.resolvePartitions()
 	if err != nil {
@@ -547,7 +548,7 @@ func (c *Config) resolveCatPartitions(lvl cacheLevel, conf partitionSet) error {
 		return err
 	}
 	if grants == nil {
-		log.Debug("%s allocation disabled for all partitions", lvl)
+		log.Debugf("%s allocation disabled for all partitions", lvl)
 		return nil
 	}
 
@@ -555,7 +556,7 @@ func (c *Config) resolveCatPartitions(lvl cacheLevel, conf partitionSet) error {
 		conf[name].CAT[lvl] = grant
 	}
 
-	log.Info("actual (and requested) %s allocations per partition and cache id:", lvl)
+	log.Infof("actual (and requested) %s allocations per partition and cache id:", lvl)
 	infoStr := ""
 	for name, partition := range resolver.requests {
 		infoStr += "\n    " + name
@@ -580,7 +581,7 @@ func (c *Config) resolveCatPartitions(lvl cacheLevel, conf partitionSet) error {
 		}
 		infoStr += "\n"
 	}
-	log.InfoBlock("", "%s", infoStr)
+	grclog.InfoBlock(log, "", "  ", "%s", infoStr)
 
 	return nil
 }
@@ -626,7 +627,7 @@ func (r *cacheResolver) resolve() (map[string]catSchema, error) {
 // resolveCacheID resolves the partition allocations for one cache id
 func (r *cacheResolver) resolveID(id uint64) error {
 	for _, typ := range []catSchemaType{catSchemaTypeUnified, catSchemaTypeCode, catSchemaTypeData} {
-		log.Debug("resolving partitions for %q schema for cache id %d", typ, id)
+		log.Debugf("resolving partitions for %q schema for cache id %d", typ, id)
 		err := r.resolveType(id, typ)
 		if err != nil {
 			return err
@@ -689,7 +690,7 @@ func (r *cacheResolver) resolveRelative(id uint64, typ catSchemaType) error {
 		}
 	}
 	if percentageTotal < 100 {
-		log.Info("requested total %s %q partition allocation for cache id %d <100%% (%d%%)", r.lvl, typ, id, percentageTotal)
+		log.Infof("requested total %s %q partition allocation for cache id %d <100%% (%d%%)", r.lvl, typ, id, percentageTotal)
 	} else if percentageTotal > 100 {
 		return fmt.Errorf("accumulated %s %q partition allocation requests for cache id %d exceeds 100%% (%d%%)", r.lvl, typ, id, percentageTotal)
 	}
@@ -1076,7 +1077,7 @@ func (c *CacheIdMbaConfig) parse() (uint64, error) {
 				return value, nil
 			}
 		} else {
-			log.Warn("unrecognized MBA allocation unit in %q", v)
+			log.Warnf("unrecognized MBA allocation unit in %q", v)
 		}
 	}
 

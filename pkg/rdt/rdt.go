@@ -226,7 +226,7 @@ func SetConfigFromFile(path string, force bool) error {
 		return err
 	}
 
-	log.Info("configuration successfully loaded from %q", path)
+	log.Infof("configuration successfully loaded from %q", path)
 	return nil
 }
 
@@ -299,7 +299,7 @@ func (c *control) setLogger(l grclog.Logger) {
 }
 
 func (c *control) setConfig(newConfig *Config, force bool) error {
-	c.Info("configuration update")
+	c.Infof("configuration update")
 
 	conf, err := (*newConfig).resolve()
 	if err != nil {
@@ -314,13 +314,13 @@ func (c *control) setConfig(newConfig *Config, force bool) error {
 	c.conf = conf
 	// TODO: we'd better create a deep copy
 	c.rawConf = *newConfig
-	c.Info("configuration finished")
+	c.Infof("configuration finished")
 
 	return nil
 }
 
 func (c *control) configureResctrl(conf config, force bool) error {
-	c.DebugBlock("", "applying resolved config: |\n%s", utils.DumpJSON(conf))
+	grclog.DebugBlock(c, "applying resolved config:", "  ", "%s", utils.DumpJSON(conf))
 
 	// Remove stale resctrl groups
 	classesFromFs, err := c.classesFromResctrlFs()
@@ -339,7 +339,7 @@ func (c *control) configureResctrl(conf config, force bool) error {
 					return fmt.Errorf("refusing to remove non-empty resctrl group %q", cls.relPath(""))
 				}
 			}
-			log.Debug("removing existing resctrl group %q", cls.relPath(""))
+			log.Debugf("removing existing resctrl group %q", cls.relPath(""))
 			err = groupRemoveFunc(cls.path(""))
 			if err != nil {
 				return fmt.Errorf("failed to remove resctrl group %q: %v", cls.relPath(""), err)
@@ -352,14 +352,14 @@ func (c *control) configureResctrl(conf config, force bool) error {
 	for name, cls := range c.classes {
 		if _, ok := conf.Classes[cls.name]; !ok || cls.prefix != c.resctrlGroupPrefix {
 			if !isRootClass(cls.name) {
-				log.Debug("dropping stale class %q (%q)", name, cls.path(""))
+				log.Debugf("dropping stale class %q (%q)", name, cls.path(""))
 				delete(c.classes, name)
 			}
 		}
 	}
 
 	if _, ok := c.classes[RootClassName]; !ok {
-		log.Warn("root class missing from runtime data, re-adding...")
+		log.Warnf("root class missing from runtime data, re-adding...")
 		c.classes[RootClassName] = classesFromFs[RootClassName]
 	}
 
@@ -386,7 +386,7 @@ func (c *control) configureResctrl(conf config, force bool) error {
 }
 
 func (c *control) discoverFromResctrl(prefix string) error {
-	c.Debug("running class discovery from resctrl filesystem using prefix %q", prefix)
+	c.Debugf("running class discovery from resctrl filesystem using prefix %q", prefix)
 
 	classesFromFs, err := c.classesFromResctrlFsPrefix(prefix)
 	if err != nil {
@@ -397,7 +397,7 @@ func (c *control) discoverFromResctrl(prefix string) error {
 	for name, cls := range c.classes {
 		if _, ok := classesFromFs[cls.name]; !ok || cls.prefix != prefix {
 			if !isRootClass(cls.name) {
-				log.Debug("dropping stale class %q (%q)", name, cls.path(""))
+				log.Debugf("dropping stale class %q (%q)", name, cls.path(""))
 				delete(c.classes, name)
 			}
 		}
@@ -406,7 +406,7 @@ func (c *control) discoverFromResctrl(prefix string) error {
 	for name, cls := range classesFromFs {
 		if _, ok := c.classes[name]; !ok {
 			c.classes[name] = cls
-			log.Debug("adding discovered class %q (%q)", name, cls.path(""))
+			log.Debugf("adding discovered class %q (%q)", name, cls.path(""))
 		}
 	}
 
@@ -505,7 +505,7 @@ func (c *ctrlGroup) CreateMonGroup(name string, annotations map[string]string) (
 		return mg, nil
 	}
 
-	log.Debug("creating monitoring group %s/%s", c.name, name)
+	log.Debugf("creating monitoring group %s/%s", c.name, name)
 	mg, err := newMonGroup(c.monPrefix, name, c, annotations)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new monitoring group %q: %v", name, err)
@@ -519,11 +519,11 @@ func (c *ctrlGroup) CreateMonGroup(name string, annotations map[string]string) (
 func (c *ctrlGroup) DeleteMonGroup(name string) error {
 	mg, ok := c.monGroups[name]
 	if !ok {
-		log.Warn("trying to delete non-existent mon group %s/%s", c.name, name)
+		log.Warnf("trying to delete non-existent mon group %s/%s", c.name, name)
 		return nil
 	}
 
-	log.Debug("deleting monitoring group %s/%s", c.name, name)
+	log.Debugf("deleting monitoring group %s/%s", c.name, name)
 	if err := groupRemoveFunc(mg.path("")); err != nil {
 		return fmt.Errorf("failed to remove monitoring group %q: %v", mg.relPath(""), err)
 	}
@@ -601,12 +601,12 @@ func (c *ctrlGroup) configure(name string, class *classConfig,
 	}
 
 	if len(schemata) > 0 {
-		log.Debug("writing schemata %q to %q", schemata, c.relPath(""))
+		log.Debugf("writing schemata %q to %q", schemata, c.relPath(""))
 		if err := rdt.writeRdtFile(c.relPath("schemata"), []byte(schemata)); err != nil {
 			return err
 		}
 	} else {
-		log.Debug("empty schemata")
+		log.Debugf("empty schemata")
 	}
 
 	return nil
@@ -672,7 +672,7 @@ func (r *resctrlGroup) AddPids(pids ...string) error {
 	for _, pid := range pids {
 		if _, err := f.WriteString(pid + "\n"); err != nil {
 			if errors.Is(err, syscall.ESRCH) {
-				log.Debug("no task %s", pid)
+				log.Debugf("no task %s", pid)
 			} else {
 				return fmt.Errorf("failed to assign processes %v to class %q: %v", pids, r.name, rdt.cmdError(err))
 			}
@@ -687,7 +687,7 @@ func (r *resctrlGroup) GetMonData() MonData {
 	if info.l3mon.Supported() {
 		l3, err := r.getMonL3Data()
 		if err != nil {
-			log.Warn("failed to retrieve L3 monitoring data: %v", err)
+			log.Warnf("failed to retrieve L3 monitoring data: %v", err)
 		} else {
 			m.L3 = l3
 		}
@@ -710,13 +710,13 @@ func (r *resctrlGroup) getMonL3Data() (MonL3Data, error) {
 			id, err := strconv.ParseUint(strings.TrimPrefix(name, "mon_L3_"), 10, 32)
 			if err != nil {
 				// Just print a warning, we try to retrieve as much info as possible
-				log.Warn("error parsing L3 monitor data directory name %q: %v", name, err)
+				log.Warnf("error parsing L3 monitor data directory name %q: %v", name, err)
 				continue
 			}
 
 			data, err := r.getMonLeafData(filepath.Join("mon_data", name))
 			if err != nil {
-				log.Warn("failed to read monitor data: %v", err)
+				log.Warnf("failed to read monitor data: %v", err)
 				continue
 			}
 
@@ -742,7 +742,7 @@ func (r *resctrlGroup) getMonLeafData(path string) (MonLeafData, error) {
 		val, err := readFileUint64(r.path(path, name))
 		if err != nil {
 			// Just print a warning, we want to retrieve as much info as possible
-			log.Warn("error reading data file: %v", err)
+			log.Warnf("error reading data file: %v", err)
 			continue
 		}
 
