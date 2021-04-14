@@ -37,7 +37,9 @@ import (
 const (
 	// RootClassName is the name we use in our config for the special class
 	// that configures the "root" resctrl group of the system
-	RootClassName = "SYSTEM_DEFAULT"
+	RootClassName = "DEFAULT"
+	// RootClassAlias is an alternative name for the root class
+	RootClassAlias = ""
 )
 
 type control struct {
@@ -261,6 +263,9 @@ func GetMonFeatures() map[MonResource][]string {
 }
 
 func (c *control) getClass(name string) (CtrlGroup, bool) {
+	if isRootClass(name) {
+		name = RootClassName
+	}
 	cls, ok := c.classes[name]
 	return cls, ok
 }
@@ -324,7 +329,7 @@ func (c *control) configureResctrl(conf config, force bool) error {
 	}
 
 	for name, cls := range classesFromFs {
-		if _, ok := conf.Classes[cls.name]; cls.name != RootClassName && !ok {
+		if _, ok := conf.Classes[cls.name]; !isRootClass(cls.name) && !ok {
 			if !force {
 				tasks, err := cls.GetPids()
 				if err != nil {
@@ -346,7 +351,7 @@ func (c *control) configureResctrl(conf config, force bool) error {
 
 	for name, cls := range c.classes {
 		if _, ok := conf.Classes[cls.name]; !ok || cls.prefix != c.resctrlGroupPrefix {
-			if cls.name != RootClassName {
+			if !isRootClass(cls.name) {
 				log.Debug("dropping stale class %q (%q)", name, cls.path(""))
 				delete(c.classes, name)
 			}
@@ -391,7 +396,7 @@ func (c *control) discoverFromResctrl(prefix string) error {
 	// Drop stale classes
 	for name, cls := range c.classes {
 		if _, ok := classesFromFs[cls.name]; !ok || cls.prefix != prefix {
-			if cls.name != RootClassName {
+			if !isRootClass(cls.name) {
 				log.Debug("dropping stale class %q (%q)", name, cls.path(""))
 				delete(c.classes, name)
 			}
@@ -805,4 +810,8 @@ func resctrlGroupsFromFs(prefix string, path string) ([]string, error) {
 		}
 	}
 	return grps, nil
+}
+
+func isRootClass(name string) bool {
+	return name == RootClassName || name == RootClassAlias
 }

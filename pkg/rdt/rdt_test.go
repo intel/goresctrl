@@ -226,9 +226,9 @@ partitions:
 
 	// Check that existing groups were read correctly on init
 	classes := GetClasses()
-	verifyGroupNames(classes, []string{"Guaranteed", "SYSTEM_DEFAULT", "Stale"})
+	verifyGroupNames(classes, []string{"Guaranteed", "DEFAULT", "Stale"})
 
-	cls, _ := GetClass("SYSTEM_DEFAULT")
+	cls, _ := GetClass("DEFAULT")
 	verifyGroupNames(cls.GetMonGroups(), []string{})
 	cls, _ = GetClass("Guaranteed")
 	verifyGroupNames(cls.GetMonGroups(), []string{"predefined_group_live"})
@@ -290,7 +290,7 @@ partitions:
 
 	// Verify GetClasses
 	classes = GetClasses()
-	verifyGroupNames(classes, []string{"BestEffort", "Burstable", "Guaranteed", "SYSTEM_DEFAULT"})
+	verifyGroupNames(classes, []string{"BestEffort", "Burstable", "Guaranteed", "DEFAULT"})
 
 	// Verify assigning pids to classes (ctrl groups)
 	cls, _ = GetClass("Guaranteed")
@@ -437,19 +437,19 @@ partitions:
 		t.Fatalf("DiscoverClasses() failed unexpectedly")
 	}
 	classes = GetClasses()
-	verifyGroupNames(classes, []string{"Guaranteed", "non_goresctrl.Group", "SYSTEM_DEFAULT"})
+	verifyGroupNames(classes, []string{"Guaranteed", "non_goresctrl.Group", "DEFAULT"})
 
 	if err := DiscoverClasses("non_goresctrl."); err != nil {
 		t.Fatalf("DiscoverClasses() failed unexpectedly")
 	}
 	classes = GetClasses()
-	verifyGroupNames(classes, []string{"Group", "SYSTEM_DEFAULT"})
+	verifyGroupNames(classes, []string{"Group", "DEFAULT"})
 
 	if err := DiscoverClasses("non-existing-prefix"); err != nil {
 		t.Fatalf("DiscoverClasses() failed unexpectedly")
 	}
 	classes = GetClasses()
-	verifyGroupNames(classes, []string{"SYSTEM_DEFAULT"})
+	verifyGroupNames(classes, []string{"DEFAULT"})
 }
 
 // TestConfig tests configuration parsing and resolving
@@ -516,7 +516,7 @@ partitions:
       class-4:
         l3Allocation: 50%
         mbAllocation: [100%]
-      SYSTEM_DEFAULT:
+      DEFAULT:
         l3Allocation: 60%
         mbAllocation: [60%]
   part-3:
@@ -549,7 +549,7 @@ partitions:
 					l3: "0=f000;1=3f;2=f;3=f000",
 					mb: "0=50;1=80;2=100;3=50",
 				},
-				"SYSTEM_DEFAULT": Schemata{
+				"DEFAULT": Schemata{
 					l3: "0=1f000;1=7f;2=1f;3=1f000",
 					mb: "0=30;1=48;2=60;3=30",
 				},
@@ -583,7 +583,7 @@ partitions:
       2,3: 60%
     classes:
       class-2:
-      SYSTEM_DEFAULT:
+      DEFAULT:
         l3Allocation:
           all: 100%
           3:
@@ -599,7 +599,7 @@ partitions:
 				"class-2": Schemata{
 					l3: "0=ff000;1=ff000;2=fff00;3=fff00",
 				},
-				"SYSTEM_DEFAULT": Schemata{
+				"DEFAULT": Schemata{
 					l3: "0=ff000;1=ff000;2=fff00;3=3ff00",
 				},
 			},
@@ -628,7 +628,7 @@ partitions:
       2,3: 60%
     classes:
       class-2:
-      SYSTEM_DEFAULT:
+      "":
         l3Allocation:
           all: 100%
           3:
@@ -646,7 +646,7 @@ partitions:
 					l3code: "0=fc000;1=fc000;2=fff00;3=fff00",
 					l3data: "0=ffc00;1=ffc00;2=fff00;3=fff00",
 				},
-				"SYSTEM_DEFAULT": Schemata{
+				"DEFAULT": Schemata{
 					l3code: "0=fc000;1=fc000;2=fff00;3=ff00",
 					l3data: "0=ffc00;1=ffc00;2=fff00;3=7ff00",
 				},
@@ -673,7 +673,7 @@ partitions:
 				"class-1": Schemata{
 					mb: "0=50;1=50;2=50;3=50",
 				},
-				"SYSTEM_DEFAULT": Schemata{
+				"DEFAULT": Schemata{
 					mb: "0=100;1=100;2=100;3=100",
 				},
 			},
@@ -691,6 +691,21 @@ partitions:
   part-2:
     classes:
       class-1:
+`,
+		},
+		// Testcase
+		TC{
+			name:        "duplicate root class (fail)",
+			fs:          "resctrl.nomb",
+			configErrRe: `"DEFAULT" defined multiple times`,
+			config: `
+partitions:
+  part-1:
+    classes:
+      "":
+  part-2:
+    classes:
+      DEFAULT:
 `,
 		},
 		// Testcase
@@ -781,7 +796,7 @@ partitions:
 				"class-1": Schemata{
 					l3: "0=ff;1=ff;2=ff;3=ff",
 				},
-				"SYSTEM_DEFAULT": Schemata{
+				"DEFAULT": Schemata{
 					l3: "0=fffff;1=fffff;2=fffff;3=fffff",
 				},
 			},
@@ -852,7 +867,7 @@ partitions:
 				"class-2": Schemata{
 					l3: "0=3ff;1=7;2=6;3=3ff",
 				},
-				"SYSTEM_DEFAULT": Schemata{
+				"DEFAULT": Schemata{
 					l3: "0=fffff;1=fffff;2=fffff;3=fffff",
 				},
 			},
@@ -887,7 +902,7 @@ partitions:
 				"class-2": Schemata{
 					l3: "0=3f0;1=300;2=e000;3=c0000",
 				},
-				"SYSTEM_DEFAULT": Schemata{
+				"DEFAULT": Schemata{
 					l3: "0=fffff;1=fffff;2=fffff;3=fffff",
 				},
 			},
@@ -1037,7 +1052,7 @@ partitions:
 				"class-1": Schemata{
 					l3: "0=3;1=c0000;2=c0000;3=3",
 				},
-				"SYSTEM_DEFAULT": Schemata{
+				"DEFAULT": Schemata{
 					l3: "0=fffff;1=fffff;2=fffff;3=fffff",
 				},
 			},
@@ -1099,7 +1114,7 @@ partitions:
 				"class-1": Schemata{
 					mb: "0=10;1=10;2=10;3=10",
 				},
-				"SYSTEM_DEFAULT": Schemata{
+				"DEFAULT": Schemata{
 					mb: "0=100;1=100;2=100;3=100",
 				},
 			},
@@ -1128,7 +1143,7 @@ partitions:
       0: 40%
       1: 5%
     classes:
-      SYSTEM_DEFAULT:
+      DEFAULT:
 `,
 			schemata: map[string]Schemata{
 				"class-1": Schemata{
@@ -1137,7 +1152,7 @@ partitions:
 				"class-2": Schemata{
 					l2: "0=c;1=40",
 				},
-				"SYSTEM_DEFAULT": Schemata{
+				"DEFAULT": Schemata{
 					l2: "0=f0;1=80",
 				},
 			},
@@ -1182,7 +1197,7 @@ partitions:
             unified: 80%
             code: 60%
             data: 90%
-      SYSTEM_DEFAULT:
+      DEFAULT:
         l3Allocation: 60%
 
 `,
@@ -1197,7 +1212,7 @@ partitions:
 					l2data: "0=ff00;1=ff00;2=fc00;3=3fc00",
 					l3:     "0=1f8",
 				},
-				"SYSTEM_DEFAULT": Schemata{
+				"DEFAULT": Schemata{
 					l2code: "0=1ff00;1=1ff00;2=ff0;3=fff00",
 					l2data: "0=1ff00;1=1ff00;2=fc00;3=ffc00",
 					l3:     "0=78",
@@ -1224,7 +1239,7 @@ partitions:
 				"class-1": Schemata{
 					l3: "0=3ff;1=3ff;2=3ff;3=3ff",
 				},
-				"SYSTEM_DEFAULT": Schemata{
+				"DEFAULT": Schemata{
 					l3: "0=fffff;1=fffff;2=fffff;3=fffff",
 				},
 			},
@@ -1306,7 +1321,7 @@ partitions:
 				"class-2": Schemata{
 					mb: "0=500;1=500;2=750;3=750",
 				},
-				"SYSTEM_DEFAULT": Schemata{
+				"DEFAULT": Schemata{
 					mb: "0=4294967295;1=4294967295;2=4294967295;3=4294967295",
 				},
 			},
