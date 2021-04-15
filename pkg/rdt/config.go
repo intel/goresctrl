@@ -130,12 +130,12 @@ type catAllocation struct {
 // cacheAllocation is the basic interface for handling cache allocations of one
 // type (unified, code, data)
 type cacheAllocation interface {
-	Overlay(Bitmask, uint64) (Bitmask, error)
+	Overlay(bitmask, uint64) (bitmask, error)
 }
 
 // catAbsoluteAllocation represents an explicitly specified cache allocation
 // bitmask
-type catAbsoluteAllocation Bitmask
+type catAbsoluteAllocation bitmask
 
 // catPctAllocation represents a relative (percentage) share of the available
 // bitmask
@@ -207,7 +207,7 @@ func (s catSchema) ToStr(typ catSchemaType, baseSchema catSchema) (string, error
 		if !ok {
 			return "", fmt.Errorf("BUG: basemask not of type catAbsoluteAllocation")
 		}
-		bitmask := Bitmask(baseMask)
+		bmask := bitmask(baseMask)
 
 		if s.Alloc != nil {
 			var err error
@@ -215,12 +215,12 @@ func (s catSchema) ToStr(typ catSchemaType, baseSchema catSchema) (string, error
 			masks := s.Alloc[id]
 			overlayMask := masks.getEffective(typ)
 
-			bitmask, err = overlayMask.Overlay(bitmask, minBits)
+			bmask, err = overlayMask.Overlay(bmask, minBits)
 			if err != nil {
 				return "", err
 			}
 		}
-		schema += fmt.Sprintf("%s%d=%x", sep, id, bitmask)
+		schema += fmt.Sprintf("%s%d=%x", sep, id, bmask)
 		sep = ";"
 	}
 
@@ -266,7 +266,7 @@ func (a catAllocation) getEffective(typ catSchemaType) cacheAllocation {
 }
 
 // Overlay function of the cacheAllocation interface
-func (a catAbsoluteAllocation) Overlay(baseMask Bitmask, minBits uint64) (Bitmask, error) {
+func (a catAbsoluteAllocation) Overlay(baseMask bitmask, minBits uint64) (bitmask, error) {
 	if err := verifyCatBaseMask(baseMask, minBits); err != nil {
 		return 0, err
 	}
@@ -274,14 +274,14 @@ func (a catAbsoluteAllocation) Overlay(baseMask Bitmask, minBits uint64) (Bitmas
 	shiftWidth := baseMask.lsbOne()
 
 	// Treat our bitmask relative to the basemask
-	bitmask := Bitmask(a) << shiftWidth
+	bmask := bitmask(a) << shiftWidth
 
 	// Do bounds checking that we're "inside" the base mask
-	if bitmask|baseMask != baseMask {
-		return 0, fmt.Errorf("bitmask %#x (%#x << %d) does not fit basemask %#x", bitmask, a, shiftWidth, baseMask)
+	if bmask|baseMask != baseMask {
+		return 0, fmt.Errorf("bitmask %#x (%#x << %d) does not fit basemask %#x", bmask, a, shiftWidth, baseMask)
 	}
 
-	return bitmask, nil
+	return bmask, nil
 }
 
 // MarshalJSON implements the Marshaler interface of "encoding/json"
@@ -290,12 +290,12 @@ func (a catAbsoluteAllocation) MarshalJSON() ([]byte, error) {
 }
 
 // Overlay function of the cacheAllocation interface
-func (a catPctAllocation) Overlay(baseMask Bitmask, minBits uint64) (Bitmask, error) {
+func (a catPctAllocation) Overlay(baseMask bitmask, minBits uint64) (bitmask, error) {
 	return catPctRangeAllocation{highPct: uint64(a)}.Overlay(baseMask, minBits)
 }
 
 // Overlay function of the cacheAllocation interface
-func (a catPctRangeAllocation) Overlay(baseMask Bitmask, minBits uint64) (Bitmask, error) {
+func (a catPctRangeAllocation) Overlay(baseMask bitmask, minBits uint64) (bitmask, error) {
 	if err := verifyCatBaseMask(baseMask, minBits); err != nil {
 		return 0, err
 	}
@@ -342,10 +342,10 @@ func (a catPctRangeAllocation) Overlay(baseMask Bitmask, minBits uint64) (Bitmas
 
 	value := ((1 << (msb - lsb + 1)) - 1) << (lsb + baseMaskLsb)
 
-	return Bitmask(value), nil
+	return bitmask(value), nil
 }
 
-func verifyCatBaseMask(baseMask Bitmask, minBits uint64) error {
+func verifyCatBaseMask(baseMask bitmask, minBits uint64) error {
 	if baseMask == 0 {
 		return fmt.Errorf("empty basemask not allowed")
 	}
@@ -735,7 +735,7 @@ func (r *cacheResolver) resolveRelative(id uint64, typ catSchemaType) error {
 	lsbID := uint64(0)
 	for _, partition := range r.partitions {
 		// Compose the actual bitmask
-		v := r.grants[partition].Alloc[id].set(typ, catAbsoluteAllocation(Bitmask(((1<<grants[partition])-1)<<lsbID)))
+		v := r.grants[partition].Alloc[id].set(typ, catAbsoluteAllocation(bitmask(((1<<grants[partition])-1)<<lsbID)))
 		r.grants[partition].Alloc[id] = v
 
 		lsbID += grants[partition]
@@ -748,16 +748,16 @@ func (r *cacheResolver) resolveAbsolute(id uint64, typ catSchemaType) error {
 	// Just sanity check:
 	// 1. allocation requests of the correct type (absolute)
 	// 2. allocations do not overlap
-	mask := Bitmask(0)
+	mask := bitmask(0)
 	for _, partition := range r.partitions {
 		a, ok := r.requests[partition][id].get(typ).(catAbsoluteAllocation)
 		if !ok {
 			return fmt.Errorf("error resolving %s allocation for cache id %d: mixing absolute and relative allocations between partitions not supported", r.lvl, id)
 		}
-		if Bitmask(a)&mask > 0 {
+		if bitmask(a)&mask > 0 {
 			return fmt.Errorf("overlapping %s partition allocation requests for cache id %d", r.lvl, id)
 		}
-		mask |= Bitmask(a)
+		mask |= bitmask(a)
 
 		r.grants[partition].Alloc[id] = r.grants[partition].Alloc[id].set(typ, a)
 	}
@@ -1136,7 +1136,7 @@ func parseCacheAllocationString(minBits uint64, data string) (cacheAllocation, e
 		}
 	} else {
 		// Last, try "list" format (i.e. smthg like 0,2,5-9,...)
-		tmp, err := ListStrToBitmask(data)
+		tmp, err := listStrToBitmask(data)
 		value = uint64(tmp)
 		if err != nil {
 			return nil, err

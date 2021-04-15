@@ -1447,7 +1447,7 @@ partitions:
 
 func TestBitMap(t *testing.T) {
 	// Test ListStr()
-	testSet := map[Bitmask]string{
+	testSet := map[bitmask]string{
 		0x0:                "",
 		0x1:                "0",
 		0x2:                "1",
@@ -1459,13 +1459,13 @@ func TestBitMap(t *testing.T) {
 	}
 	for i, s := range testSet {
 		// Test conversion to string
-		listStr := i.ListStr()
+		listStr := i.listStr()
 		if listStr != s {
 			t.Errorf("from %#x expected %q, got %q", i, s, listStr)
 		}
 
 		// Test conversion from string
-		b, err := ListStrToBitmask(s)
+		b, err := listStrToBitmask(s)
 		if err != nil {
 			t.Errorf("unexpected err when converting %q: %v", s, err)
 		}
@@ -1492,14 +1492,14 @@ func TestBitMap(t *testing.T) {
 		"1,2,3-",
 	}
 	for _, s := range negTestSet {
-		b, err := ListStrToBitmask(s)
+		b, err := listStrToBitmask(s)
 		if err == nil {
 			t.Errorf("expected err but got %#x when converting %q", b, s)
 		}
 	}
 
 	// Test MarshalJSON
-	if s, err := Bitmask(10).MarshalJSON(); err != nil {
+	if s, err := bitmask(10).MarshalJSON(); err != nil {
 	} else if string(s) != `"0xa"` {
 		t.Errorf(`expected "0xa" but returned %s`, s)
 	}

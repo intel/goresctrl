@@ -52,9 +52,9 @@ type catInfoAll struct {
 }
 
 type catInfo struct {
-	cbmMask       Bitmask
+	cbmMask       bitmask
 	minCbmBits    uint64
-	shareableBits Bitmask
+	shareableBits bitmask
 }
 
 type l3MonInfo struct {
@@ -83,12 +83,12 @@ func (i catInfoAll) getInfo() catInfo {
 	return i.unified
 }
 
-func (i catInfoAll) cbmMask() Bitmask {
+func (i catInfoAll) cbmMask() bitmask {
 	mask := i.getInfo().cbmMask
 	if mask != 0 {
 		return mask
 	}
-	return Bitmask(^uint64(0))
+	return bitmask(^uint64(0))
 }
 
 func (i catInfoAll) minCbmBits() uint64 {
@@ -325,14 +325,14 @@ func readFileUint64(path string) (uint64, error) {
 	return strconv.ParseUint(data, 10, 64)
 }
 
-func readFileBitmask(path string) (Bitmask, error) {
+func readFileBitmask(path string) (bitmask, error) {
 	data, err := readFileString(path)
 	if err != nil {
 		return 0, err
 	}
 
 	value, err := strconv.ParseUint(data, 16, 64)
-	return Bitmask(value), err
+	return bitmask(value), err
 }
 
 func readFileString(path string) (string, error) {

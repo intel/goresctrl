@@ -23,17 +23,17 @@ import (
 	"strings"
 )
 
-// Bitmask represents a generic 64 bit wide bitmask
-type Bitmask uint64
+// bitmask represents a generic 64 bit wide bitmask
+type bitmask uint64
 
 // MarshalJSON implements the Marshaler interface of "encoding/json"
-func (b Bitmask) MarshalJSON() ([]byte, error) {
+func (b bitmask) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("\"%#x\"", b)), nil
 }
 
-// ListStr prints the bitmask in human-readable format, similar to e.g. the
+// listStr prints the bitmask in human-readable format, similar to e.g. the
 // cpuset format of the Linux kernel
-func (b Bitmask) ListStr() string {
+func (b bitmask) listStr() string {
 	str := ""
 	sep := ""
 
@@ -66,10 +66,10 @@ func (b Bitmask) ListStr() string {
 	return str
 }
 
-// ListStrToBitmask parses a string containing a human-readable list of bit
+// listStrToBitmask parses a string containing a human-readable list of bit
 // numbers into a bitmask
-func ListStrToBitmask(str string) (Bitmask, error) {
-	b := Bitmask(0)
+func listStrToBitmask(str string) (bitmask, error) {
+	b := bitmask(0)
 
 	// Empty bitmask
 	if len(str) == 0 {
@@ -101,18 +101,18 @@ func ListStrToBitmask(str string) (Bitmask, error) {
 	return b, nil
 }
 
-func (b Bitmask) lsbOne() int {
+func (b bitmask) lsbOne() int {
 	if b == 0 {
 		return -1
 	}
 	return bits.TrailingZeros64(uint64(b))
 }
 
-func (b Bitmask) msbOne() int {
+func (b bitmask) msbOne() int {
 	// Returns -1 for b == 0
 	return 63 - bits.LeadingZeros64(uint64(b))
 }
 
-func (b Bitmask) lsbZero() int {
+func (b bitmask) lsbZero() int {
 	return bits.TrailingZeros64(^uint64(b))
 }
