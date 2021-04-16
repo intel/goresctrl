@@ -14,6 +14,34 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package rdt implements an API for managing Intel® RDT technologies via the
+// resctrl pseudo-filesystem of the Linux kernel. It provides flexible
+// configuration with a hierarchical approach for easy management of exclusive
+// cache allocations.
+//
+// Goresctrl supports all available RDT technologies, i.e. L2 and L3 Cache
+// Allocation (CAT) with Code and Data Prioritization (CDP) and Memory
+// Bandwidth Allocation (MBA) plus Cache Monitoring (CMT) and Memory Bandwidth
+// Monitoring (MBM).
+//
+// Basic usage example:
+//   rdt.SetLogger(logrus.New())
+//
+//   if err := rdt.Initialize(""); err != nil {
+//   	return fmt.Errorf("RDT not supported: %v", err)
+//   }
+//
+//   if err := rdt.SetConfigFromFile("/path/to/rdt.conf.yaml", false); err != nil {
+//   	return fmt.Errorf("RDT configuration failed: %v", err)
+//   }
+//
+//   if cls, ok := rdt.GetClass("my-class"); ok {
+//      //  Set PIDs 12345 and 12346 to class "my-class"
+//   	if err := cls.AddPids("12345", "12346"); err != nil {
+//   		return fmt.Errorf("failed to add PIDs to RDT class: %v", err)
+//   	}
+//   }
+
 package rdt
 
 import (
@@ -61,68 +89,71 @@ var rdt *control
 // configurable because of unit tests.
 var groupRemoveFunc func(string) error = os.Remove
 
-// CtrlGroup defines the interface of one goresctrl managed RDT class
+// CtrlGroup defines the interface of one goresctrl managed RDT class. It maps
+// to one CTRL group directory in the goresctrl pseudo-filesystem.
 type CtrlGroup interface {
 	ResctrlGroup
 
-	// CreateMonGroup creates a new monitoring group under the class.
+	// CreateMonGroup creates a new monitoring group under this CtrlGroup.
 	CreateMonGroup(name string, annotations map[string]string) (MonGroup, error)
 
-	// DeleteMonGroup deletes a monitoring group from the class.
+	// DeleteMonGroup deletes a monitoring group from this CtrlGroup.
 	DeleteMonGroup(name string) error
 
-	// DeleteMonGroups deletes all monitoring groups.
+	// DeleteMonGroups deletes all monitoring groups from this CtrlGroup.
 	DeleteMonGroups() error
 
-	// GetMonGroup returns a specific monitoring group under the class
+	// GetMonGroup returns a specific monitoring group under this CtrlGroup.
 	GetMonGroup(name string) (MonGroup, bool)
 
-	// GetMonGroups returns all monitoring groups under the class
+	// GetMonGroups returns all monitoring groups under this CtrlGroup.
 	GetMonGroups() []MonGroup
 }
 
-// ResctrlGroup is the generic interface for resctrl CTRL and MON groups
+// ResctrlGroup is the generic interface for resctrl CTRL and MON groups. It
+// maps to one CTRL or MON group directory in the goresctrl pseudo-filesystem.
 type ResctrlGroup interface {
-	// Name returns the name of the group
+	// Name returns the name of the group.
 	Name() string
 
-	// GetPids returns the process ids assigned to the group
+	// GetPids returns the process ids assigned to the group.
 	GetPids() ([]string, error)
 
-	// AddPids assigns the given process ids to the group
+	// AddPids assigns the given process ids to the group.
 	AddPids(pids ...string) error
 
-	// GetMonData retrieves the monitoring data of the group
+	// GetMonData retrieves the monitoring data of the group.
 	GetMonData() MonData
 }
 
-// MonGroup represents the interface to a RDT monitoring group
+// MonGroup represents the interface to a RDT monitoring group. It maps to one
+// MON group in the goresctrl filesystem.
 type MonGroup interface {
 	ResctrlGroup
 
-	// Parent returns the CtrlGroup under which the monitoring group exists
+	// Parent returns the CtrlGroup under which the monitoring group exists.
 	Parent() CtrlGroup
 
-	// GetAnnotations returns the annotations stored to the monitoring group
+	// GetAnnotations returns the annotations stored to the monitoring group.
 	GetAnnotations() map[string]string
 }
 
-// MonData contains monitoring stats of one monitoring group
+// MonData contains monitoring stats of one monitoring group.
 type MonData struct {
 	L3 MonL3Data
 }
 
-// MonL3Data contains L3 monitoring stats of one monitoring group
+// MonL3Data contains L3 monitoring stats of one monitoring group.
 type MonL3Data map[uint64]MonLeafData
 
-// MonLeafData represents the raw numerical stats from one RDT monitor data leaf
+// MonLeafData represents the raw numerical stats from one RDT monitor data leaf.
 type MonLeafData map[string]uint64
 
-// MonResource is the type of RDT monitoring resource
+// MonResource is the type of RDT monitoring resource.
 type MonResource string
 
 const (
-	// MonResourceL3 is the RDT L3 cache monitor resource
+	// MonResourceL3 is the RDT L3 cache monitor resource.
 	MonResourceL3 MonResource = "l3"
 )
 
@@ -154,7 +185,8 @@ func SetLogger(l grclog.Logger) {
 	}
 }
 
-// Initialize discovers RDT support and initializes the  rdtControl singleton interface
+// Initialize detects RDT from the system and initializes control interface of
+// the package.
 func Initialize(resctrlGroupPrefix string) error {
 	var err error
 
@@ -194,8 +226,8 @@ func DiscoverClasses(resctrlGroupPrefix string) error {
 	return fmt.Errorf("rdt not initialized")
 }
 
-// SetConfig parses new configuration and reconfigures the resctrl filesystem
-// accordingly
+// SetConfig  (re-)configures the resctrl filesystem according to the specified
+// configuration.
 func SetConfig(c *Config, force bool) error {
 	if rdt != nil {
 		return rdt.setConfig(c, force)
@@ -204,7 +236,7 @@ func SetConfig(c *Config, force bool) error {
 }
 
 // SetConfigFromData takes configuration as raw data, parses it and
-// reconfigures the resctrl filesystem
+// reconfigures the resctrl filesystem.
 func SetConfigFromData(data []byte, force bool) error {
 	cfg := &Config{}
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
@@ -215,7 +247,7 @@ func SetConfigFromData(data []byte, force bool) error {
 }
 
 // SetConfigFromFile reads configuration from the filesystem and reconfigures
-// the resctrl filesystem
+// the resctrl filesystem.
 func SetConfigFromFile(path string, force bool) error {
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
@@ -230,7 +262,7 @@ func SetConfigFromFile(path string, force bool) error {
 	return nil
 }
 
-// GetClass returns one RDT class
+// GetClass returns one RDT class.
 func GetClass(name string) (CtrlGroup, bool) {
 	if rdt != nil {
 		return rdt.getClass(name)
@@ -238,7 +270,7 @@ func GetClass(name string) (CtrlGroup, bool) {
 	return nil, false
 }
 
-// GetClasses returns all available RDT classes
+// GetClasses returns all available RDT classes.
 func GetClasses() []CtrlGroup {
 	if rdt != nil {
 		return rdt.getClasses()
@@ -246,7 +278,7 @@ func GetClasses() []CtrlGroup {
 	return []CtrlGroup{}
 }
 
-// MonSupported returns true if RDT monitoring features are available
+// MonSupported returns true if RDT monitoring features are available.
 func MonSupported() bool {
 	if rdt != nil {
 		return rdt.monSupported()
@@ -254,7 +286,8 @@ func MonSupported() bool {
 	return false
 }
 
-// GetMonFeatures returns the available monitoring stats of each available monitoring technology
+// GetMonFeatures returns the available monitoring stats of each available
+// monitoring technology.
 func GetMonFeatures() map[MonResource][]string {
 	if rdt != nil {
 		return rdt.getMonFeatures()
