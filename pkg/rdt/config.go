@@ -57,8 +57,20 @@ type CacheIdCatConfig struct {
 	Data    string
 }
 
-// CacheIdMbaConfig is the memory bandwidth configuration for one cache id
-type CacheIdMbaConfig []string
+// CacheIdMbaConfig is the memory bandwidth configuration for one cache id.
+// It's an array of at most two values, specifying separate values to be used
+// for percentage based and MBps based memory bandwidth allocation. For
+// example, `{"80%", "1000MBps"}` would allocate 80% if percentage based
+// allocation is used by the Linux kernel, or 1000 MBps in case MBps based
+// allocation is in use.
+type CacheIdMbaConfig []MbProportion
+
+// MbProportion specifies a share of available memory bandwidth. It's an
+// integer value followed by a unit. Two units are supported:
+//
+// - percentage, e.g. `80%`
+// - MBps, e.g. `1000MBps`
+type MbProportion string
 
 // CacheIdAll is a special cache id used to denote a default, used as a
 // fallback for all cache ids that are not explicitly specified
@@ -1060,24 +1072,25 @@ func (c *CacheIdCatConfig) UnmarshalJSON(data []byte) error {
 // to be used in the MBA schema
 func (c *CacheIdMbaConfig) parse() (uint64, error) {
 	for _, v := range *c {
-		if strings.HasSuffix(v, mbSuffixPct) {
+		str := string(v)
+		if strings.HasSuffix(str, mbSuffixPct) {
 			if !info.mb.mbpsEnabled {
-				value, err := strconv.ParseUint(strings.TrimSuffix(v, mbSuffixPct), 10, 7)
+				value, err := strconv.ParseUint(strings.TrimSuffix(str, mbSuffixPct), 10, 7)
 				if err != nil {
 					return 0, err
 				}
 				return value, nil
 			}
-		} else if strings.HasSuffix(v, mbSuffixMbps) {
+		} else if strings.HasSuffix(str, mbSuffixMbps) {
 			if info.mb.mbpsEnabled {
-				value, err := strconv.ParseUint(strings.TrimSuffix(v, mbSuffixMbps), 10, 32)
+				value, err := strconv.ParseUint(strings.TrimSuffix(str, mbSuffixMbps), 10, 32)
 				if err != nil {
 					return 0, err
 				}
 				return value, nil
 			}
 		} else {
-			log.Warnf("unrecognized MBA allocation unit in %q", v)
+			log.Warnf("unrecognized MBA allocation unit in %q", str)
 		}
 	}
 
