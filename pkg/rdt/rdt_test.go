@@ -23,10 +23,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sigs.k8s.io/yaml"
 	"sort"
 	"strings"
 	"testing"
+
+	"sigs.k8s.io/yaml"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -1626,68 +1627,68 @@ func TestCacheAllocation(t *testing.T) {
 	}
 }
 
-func TestParseCacheAllocationString(t *testing.T) {
+func TestCacheProportion(t *testing.T) {
 	// Test percentage
-	if a, err := parseCacheAllocationString(2, "10%"); err != nil {
+	if a, err := CacheProportion("10%").parse(2); err != nil {
 		t.Errorf("unexpected error when parsing cache allocation: %v", err)
 	} else if a != catPctAllocation(10) {
 		t.Errorf("expected 10%% but got %d%%", a)
 	}
-	if _, err := parseCacheAllocationString(2, "1a%"); err == nil {
+	if _, err := CacheProportion("1a%").parse(2); err == nil {
 		t.Errorf("unexpected success when parsing percentage cache allocation")
 	}
-	if _, err := parseCacheAllocationString(2, "101%"); err == nil {
+	if _, err := CacheProportion("101%").parse(2); err == nil {
 		t.Errorf("unexpected success when parsing percentage cache allocation")
 	}
 
 	// Test percentage ranges
-	if a, err := parseCacheAllocationString(2, "10-20%"); err != nil {
+	if a, err := CacheProportion("10-20%").parse(2); err != nil {
 		t.Errorf("unexpected error when parsing cache allocation: %v", err)
 	} else if a != (catPctRangeAllocation{lowPct: 10, highPct: 20}) {
 		t.Errorf("expected {10 20} but got %v", a)
 	}
-	if _, err := parseCacheAllocationString(2, "a-100%"); err == nil {
+	if _, err := CacheProportion("a-100%").parse(2); err == nil {
 		t.Errorf("unexpected success when parsing percentage range cache allocation")
 	}
-	if _, err := parseCacheAllocationString(2, "0-1f%"); err == nil {
+	if _, err := CacheProportion("0-1f%").parse(2); err == nil {
 		t.Errorf("unexpected success when parsing percentage range cache allocation")
 	}
-	if _, err := parseCacheAllocationString(2, "20-10%"); err == nil {
+	if _, err := CacheProportion("20-10%").parse(2); err == nil {
 		t.Errorf("unexpected success when parsing percentage range cache allocation")
 	}
-	if _, err := parseCacheAllocationString(2, "20-101%"); err == nil {
+	if _, err := CacheProportion("20-101%").parse(2); err == nil {
 		t.Errorf("unexpected success when parsing percentage range cache allocation")
 	}
 
 	// Test bitmask
-	if a, err := parseCacheAllocationString(2, "0xf0"); err != nil {
+	if a, err := CacheProportion("0xf0").parse(2); err != nil {
 		t.Errorf("unexpected error when parsing cache allocation: %v", err)
 	} else if a != catAbsoluteAllocation(0xf0) {
 		t.Errorf("expected 0xf0 but got %#x", a)
 	}
-	if _, err := parseCacheAllocationString(2, "0x40"); err == nil {
+	if _, err := CacheProportion("0x40").parse(2); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
 	}
-	if _, err := parseCacheAllocationString(2, "0x11"); err == nil {
+	if _, err := CacheProportion("0x11").parse(2); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
 	}
-	if _, err := parseCacheAllocationString(2, "0xg"); err == nil {
+	if _, err := CacheProportion("0xg").parse(2); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
 	}
 
 	// Test bit numbers
-	if a, err := parseCacheAllocationString(2, "3,4,5-7,8"); err != nil {
+	if a, err := CacheProportion("3,4,5-7,8").parse(2); err != nil {
 		t.Errorf("unexpected error when parsing cache allocation: %v", err)
 	} else if a != catAbsoluteAllocation(0x1f8) {
 		t.Errorf("expected 0x1f8 but got %#x", a)
 	}
-	if _, err := parseCacheAllocationString(2, "3,5"); err == nil {
+	if _, err := CacheProportion("3,5").parse(2); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
 	}
-	if _, err := parseCacheAllocationString(2, "1"); err == nil {
+	if _, err := CacheProportion("1").parse(2); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
 	}
-	if _, err := parseCacheAllocationString(2, "3-x"); err == nil {
+	if _, err := CacheProportion("3-x").parse(2); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
 	}
 }

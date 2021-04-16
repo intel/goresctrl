@@ -52,13 +52,22 @@ type MbaConfig map[string]CacheIdMbaConfig
 
 // CacheIdCatConfig is the cache allocation configuration for one cache id
 type CacheIdCatConfig struct {
-	Unified string
-	Code    string
-	Data    string
+	Unified CacheProportion
+	Code    CacheProportion
+	Data    CacheProportion
 }
 
 // CacheIdMbaConfig is the memory bandwidth configuration for one cache id
 type CacheIdMbaConfig []string
+
+// CacheProportion specifies a share of the available cache lines.
+// Supported formats:
+//
+// - percentage, e.g. `50%`
+// - percentage range, e.g. `50-60%`
+// - bit numbers, e.g. `0-5`, `2,3`, must contain one contiguous block of bits set
+// - hex bitmask, e.g. `0xff0`, must contain one contiguous block of bits set
+type CacheProportion string
 
 // CacheIdAll is a special cache id used to denote a default, used as a
 // fallback for all cache ids that are not explicitly specified
@@ -898,7 +907,7 @@ func (c *CatConfig) UnmarshalJSON(data []byte) error {
 	conf := CatConfig{}
 	switch v := (*raw).(type) {
 	case string:
-		conf[CacheIdAll] = CacheIdCatConfig{Unified: v}
+		conf[CacheIdAll] = CacheIdCatConfig{Unified: CacheProportion(v)}
 	default:
 		// Use the helper type to avoid infinite recursion
 		helper := catConfig{}
@@ -999,15 +1008,15 @@ func (c *CacheIdCatConfig) parse(minBits uint64) (catAllocation, error) {
 	var err error
 	allocation := catAllocation{}
 
-	allocation.Unified, err = parseCacheAllocationString(minBits, c.Unified)
+	allocation.Unified, err = c.Unified.parse(minBits)
 	if err != nil {
 		return allocation, err
 	}
-	allocation.Code, err = parseCacheAllocationString(minBits, c.Code)
+	allocation.Code, err = c.Code.parse(minBits)
 	if err != nil {
 		return allocation, err
 	}
-	allocation.Data, err = parseCacheAllocationString(minBits, c.Data)
+	allocation.Data, err = c.Data.parse(minBits)
 	if err != nil {
 		return allocation, err
 	}
@@ -1041,7 +1050,7 @@ func (c *CacheIdCatConfig) UnmarshalJSON(data []byte) error {
 	conf := CacheIdCatConfig{}
 	switch v := (*raw).(type) {
 	case string:
-		conf.Unified = v
+		conf.Unified = CacheProportion(v)
 	default:
 		// Use the helper type to avoid infinite recursion
 		helper := cacheIdCatConfig{}
@@ -1088,15 +1097,15 @@ func (c *CacheIdMbaConfig) parse() (uint64, error) {
 	return 0, fmt.Errorf("missing '%%' value from mbSchema; required because percentage-based MBA allocation is enabled in the system")
 }
 
-// parseCacheAllocationString converts a string value into cacheAllocation type
-func parseCacheAllocationString(minBits uint64, data string) (cacheAllocation, error) {
-	if data == "" {
+// parse converts a string value into cacheAllocation type
+func (c CacheProportion) parse(minBits uint64) (cacheAllocation, error) {
+	if c == "" {
 		return nil, nil
 	}
 
-	if data[len(data)-1] == '%' {
+	if c[len(c)-1] == '%' {
 		// Percentages of the max number of bits
-		split := strings.SplitN(data[0:len(data)-1], "-", 2)
+		split := strings.SplitN(string(c)[0:len(c)-1], "-", 2)
 		var allocation cacheAllocation
 
 		if len(split) == 1 {
@@ -1105,7 +1114,7 @@ func parseCacheAllocationString(minBits uint64, data string) (cacheAllocation, e
 				return allocation, err
 			}
 			if pct > 100 {
-				return allocation, fmt.Errorf("invalid percentage value %q", data)
+				return allocation, fmt.Errorf("invalid percentage value %q", c)
 			}
 			allocation = catPctAllocation(pct)
 		} else {
@@ -1118,7 +1127,7 @@ func parseCacheAllocationString(minBits uint64, data string) (cacheAllocation, e
 				return allocation, err
 			}
 			if low > high || low > 100 || high > 100 {
-				return allocation, fmt.Errorf("invalid percentage range %q", data)
+				return allocation, fmt.Errorf("invalid percentage range %q", c)
 			}
 			allocation = catPctRangeAllocation{lowPct: low, highPct: high}
 		}
@@ -1129,15 +1138,15 @@ func parseCacheAllocationString(minBits uint64, data string) (cacheAllocation, e
 	// Absolute allocation
 	var value uint64
 	var err error
-	if strings.HasPrefix(data, "0x") {
+	if strings.HasPrefix(string(c), "0x") {
 		// Hex value
-		value, err = strconv.ParseUint(data[2:], 16, 64)
+		value, err = strconv.ParseUint(string(c[2:]), 16, 64)
 		if err != nil {
 			return nil, err
 		}
 	} else {
 		// Last, try "list" format (i.e. smthg like 0,2,5-9,...)
-		tmp, err := listStrToBitmask(data)
+		tmp, err := listStrToBitmask(string(c))
 		value = uint64(tmp)
 		if err != nil {
 			return nil, err
@@ -1148,10 +1157,10 @@ func parseCacheAllocationString(minBits uint64, data string) (cacheAllocation, e
 	// contiguous block of ones wide enough
 	numOnes := bits.OnesCount64(value)
 	if numOnes != 64-bits.LeadingZeros64(value)-bits.TrailingZeros64(value) {
-		return nil, fmt.Errorf("invalid cache bitmask %q: more than one continuous block of ones", data)
+		return nil, fmt.Errorf("invalid cache bitmask %q: more than one continuous block of ones", c)
 	}
 	if uint64(numOnes) < minBits {
-		return nil, fmt.Errorf("invalid cache bitmask %q: number of bits less than %d", data, minBits)
+		return nil, fmt.Errorf("invalid cache bitmask %q: number of bits less than %d", c, minBits)
 	}
 
 	return catAbsoluteAllocation(value), nil
