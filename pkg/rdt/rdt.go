@@ -92,6 +92,12 @@ type ResctrlGroup interface {
 	// AddPids assigns the given process ids to the group
 	AddPids(pids ...string) error
 
+	// GetCPUs returns the cpu ids associated with the group
+	GetCPUs() (string, error)
+
+	// SetCPUs associates the given cpu ids with the group
+	SetCPUs(cpus ...string) error
+
 	// GetMonData retrieves the monitoring data of the group
 	GetMonData() MonData
 }
@@ -677,6 +683,27 @@ func (r *resctrlGroup) AddPids(pids ...string) error {
 				return fmt.Errorf("failed to assign processes %v to class %q: %v", pids, r.name, rdt.cmdError(err))
 			}
 		}
+	}
+	return nil
+}
+
+func (r *resctrlGroup) GetCPUs() (string, error) {
+	data, err := rdt.readRdtFile(r.relPath("cpus_list"))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+func (r *resctrlGroup) SetCPUs(cpus ...string) error {
+	f, err := os.OpenFile(r.path("cpus_list"), os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if _, err := f.WriteString(strings.Join(cpus, ",")); err != nil {
+		return rdtError("failed to associate cpus %v to class %q: %v", cpus, r.name, rdt.cmdError(err))
 	}
 	return nil
 }
