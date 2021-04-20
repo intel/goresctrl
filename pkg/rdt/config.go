@@ -159,7 +159,7 @@ const (
 	catSchemaTypeData catSchemaType = "data"
 )
 
-func (o Options) Cat(lvl cacheLevel) CatOptions {
+func (o Options) cat(lvl cacheLevel) CatOptions {
 	switch lvl {
 	case L2:
 		return o.L2
@@ -169,7 +169,7 @@ func (o Options) Cat(lvl cacheLevel) CatOptions {
 	return CatOptions{}
 }
 
-func (t catSchemaType) ToResctrlStr() string {
+func (t catSchemaType) toResctrlStr() string {
 	if t == catSchemaTypeUnified {
 		return ""
 	}
@@ -188,10 +188,10 @@ func newCatSchema(typ cacheLevel) catSchema {
 	}
 }
 
-// ToStr returns the CAT schema in a format accepted by the Linux kernel
+// toStr returns the CAT schema in a format accepted by the Linux kernel
 // resctrl (schemata) interface
-func (s catSchema) ToStr(typ catSchemaType, baseSchema catSchema) (string, error) {
-	schema := string(s.Lvl) + typ.ToResctrlStr() + ":"
+func (s catSchema) toStr(typ catSchemaType, baseSchema catSchema) (string, error) {
+	schema := string(s.Lvl) + typ.toResctrlStr() + ":"
 	sep := ""
 
 	// Get a sorted slice of cache ids for deterministic output
@@ -373,9 +373,9 @@ func (a catPctRangeAllocation) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("\"%d-%d%%\"", a.lowPct, a.highPct)), nil
 }
 
-// ToStr returns the MB schema in a format accepted by the Linux kernel
+// toStr returns the MB schema in a format accepted by the Linux kernel
 // resctrl (schemata) interface
-func (s mbSchema) ToStr(base map[uint64]uint64) string {
+func (s mbSchema) toStr(base map[uint64]uint64) string {
 	schema := "MB:"
 	sep := ""
 
