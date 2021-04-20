@@ -93,18 +93,18 @@ type classConfig struct {
 
 // Options contains the common settings for all classes
 type Options struct {
-	L2 catOptions `json:"l2"`
-	L3 catOptions `json:"l3"`
-	MB mbOptions  `json:"mb"`
+	L2 CatOptions `json:"l2"`
+	L3 CatOptions `json:"l3"`
+	MB MbOptions  `json:"mb"`
 }
 
-// catOptions contains the common settings for cache allocation
-type catOptions struct {
+// CatOptions contains the common settings for cache allocation
+type CatOptions struct {
 	Optional bool
 }
 
-// mbOptions contains the common settings for memory bandwidth allocation
-type mbOptions struct {
+// MbOptions contains the common settings for memory bandwidth allocation
+type MbOptions struct {
 	Optional bool
 }
 
@@ -159,14 +159,14 @@ const (
 	catSchemaTypeData catSchemaType = "data"
 )
 
-func (o Options) Cat(lvl cacheLevel) catOptions {
+func (o Options) Cat(lvl cacheLevel) CatOptions {
 	switch lvl {
 	case L2:
 		return o.L2
 	case L3:
 		return o.L3
 	}
-	return catOptions{}
+	return CatOptions{}
 }
 
 func (t catSchemaType) ToResctrlStr() string {
