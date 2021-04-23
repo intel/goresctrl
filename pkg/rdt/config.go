@@ -29,7 +29,7 @@ import (
 	"github.com/intel/goresctrl/pkg/utils"
 )
 
-// Config is the user-specified RDT configuration
+// Config is the user-specified RDT configuration.
 type Config struct {
 	Options    Options `json:"options"`
 	Partitions map[string]struct {
@@ -44,13 +44,18 @@ type Config struct {
 	} `json:"partitions"`
 }
 
-// CatConfig contains the L2 or L3 cache allocation configuration for one partition or class
+// CatConfig contains the L2 or L3 cache allocation configuration for one partition or class.
 type CatConfig map[string]CacheIdCatConfig
 
-// MbaConfig contains the memory bandwidth configuration for one partition or class
+// MbaConfig contains the memory bandwidth configuration for one partition or class.
 type MbaConfig map[string]CacheIdMbaConfig
 
-// CacheIdCatConfig is the cache allocation configuration for one cache id
+// CacheIdCatConfig is the cache allocation configuration for one cache id.
+// Code and Data represent an optional configuration for separate code and data
+// paths and only have effect when RDT CDP (Code and Data Prioritization) is
+// enabled in the system. Code and Data go in tandem so that both or neither
+// must be specified - only specifying the other is considered a configuration
+// error.
 type CacheIdCatConfig struct {
 	Unified CacheProportion
 	Code    CacheProportion
@@ -82,7 +87,7 @@ type MbProportion string
 type CacheProportion string
 
 // CacheIdAll is a special cache id used to denote a default, used as a
-// fallback for all cache ids that are not explicitly specified
+// fallback for all cache ids that are not explicitly specified.
 const CacheIdAll = "all"
 
 // config represents the final (parsed and resolved) runtime configuration of
@@ -113,19 +118,19 @@ type classConfig struct {
 	MBSchema  mbSchema
 }
 
-// Options contains the common settings for all classes
+// Options contains common settings.
 type Options struct {
 	L2 CatOptions `json:"l2"`
 	L3 CatOptions `json:"l3"`
 	MB MbOptions  `json:"mb"`
 }
 
-// CatOptions contains the common settings for cache allocation
+// CatOptions contains the common settings for cache allocation.
 type CatOptions struct {
 	Optional bool
 }
 
-// MbOptions contains the common settings for memory bandwidth allocation
+// MbOptions contains the common settings for memory bandwidth allocation.
 type MbOptions struct {
 	Optional bool
 }
@@ -181,6 +186,7 @@ const (
 	catSchemaTypeData catSchemaType = "data"
 )
 
+// cat returns CAT options for the specified cache level.
 func (o Options) cat(lvl cacheLevel) CatOptions {
 	switch lvl {
 	case L2:
