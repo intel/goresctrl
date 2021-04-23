@@ -115,18 +115,18 @@ type classConfig struct {
 
 // Options contains the common settings for all classes
 type Options struct {
-	L2 catOptions `json:"l2"`
-	L3 catOptions `json:"l3"`
-	MB mbOptions  `json:"mb"`
+	L2 CatOptions `json:"l2"`
+	L3 CatOptions `json:"l3"`
+	MB MbOptions  `json:"mb"`
 }
 
-// catOptions contains the common settings for cache allocation
-type catOptions struct {
+// CatOptions contains the common settings for cache allocation
+type CatOptions struct {
 	Optional bool
 }
 
-// mbOptions contains the common settings for memory bandwidth allocation
-type mbOptions struct {
+// MbOptions contains the common settings for memory bandwidth allocation
+type MbOptions struct {
 	Optional bool
 }
 
@@ -181,17 +181,17 @@ const (
 	catSchemaTypeData catSchemaType = "data"
 )
 
-func (o Options) Cat(lvl cacheLevel) catOptions {
+func (o Options) cat(lvl cacheLevel) CatOptions {
 	switch lvl {
 	case L2:
 		return o.L2
 	case L3:
 		return o.L3
 	}
-	return catOptions{}
+	return CatOptions{}
 }
 
-func (t catSchemaType) ToResctrlStr() string {
+func (t catSchemaType) toResctrlStr() string {
 	if t == catSchemaTypeUnified {
 		return ""
 	}
@@ -210,10 +210,10 @@ func newCatSchema(typ cacheLevel) catSchema {
 	}
 }
 
-// ToStr returns the CAT schema in a format accepted by the Linux kernel
+// toStr returns the CAT schema in a format accepted by the Linux kernel
 // resctrl (schemata) interface
-func (s catSchema) ToStr(typ catSchemaType, baseSchema catSchema) (string, error) {
-	schema := string(s.Lvl) + typ.ToResctrlStr() + ":"
+func (s catSchema) toStr(typ catSchemaType, baseSchema catSchema) (string, error) {
+	schema := string(s.Lvl) + typ.toResctrlStr() + ":"
 	sep := ""
 
 	// Get a sorted slice of cache ids for deterministic output
@@ -395,9 +395,9 @@ func (a catPctRangeAllocation) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("\"%d-%d%%\"", a.lowPct, a.highPct)), nil
 }
 
-// ToStr returns the MB schema in a format accepted by the Linux kernel
+// toStr returns the MB schema in a format accepted by the Linux kernel
 // resctrl (schemata) interface
-func (s mbSchema) ToStr(base map[uint64]uint64) string {
+func (s mbSchema) toStr(base map[uint64]uint64) string {
 	schema := "MB:"
 	sep := ""
 

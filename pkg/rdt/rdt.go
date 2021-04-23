@@ -566,25 +566,25 @@ func (c *ctrlGroup) configure(name string, class *classConfig,
 	for _, lvl := range []cacheLevel{L2, L3} {
 		switch {
 		case info.cat[lvl].unified.Supported():
-			schema, err := class.CATSchema[lvl].ToStr(catSchemaTypeUnified, partition.CAT[lvl])
+			schema, err := class.CATSchema[lvl].toStr(catSchemaTypeUnified, partition.CAT[lvl])
 			if err != nil {
 				return err
 			}
 			schemata += schema
 		case info.cat[lvl].data.Supported() || info.cat[lvl].code.Supported():
-			schema, err := class.CATSchema[lvl].ToStr(catSchemaTypeCode, partition.CAT[lvl])
+			schema, err := class.CATSchema[lvl].toStr(catSchemaTypeCode, partition.CAT[lvl])
 			if err != nil {
 				return err
 			}
 			schemata += schema
 
-			schema, err = class.CATSchema[lvl].ToStr(catSchemaTypeData, partition.CAT[lvl])
+			schema, err = class.CATSchema[lvl].toStr(catSchemaTypeData, partition.CAT[lvl])
 			if err != nil {
 				return err
 			}
 			schemata += schema
 		default:
-			if class.CATSchema[lvl].Alloc != nil && !options.Cat(lvl).Optional {
+			if class.CATSchema[lvl].Alloc != nil && !options.cat(lvl).Optional {
 				return fmt.Errorf("%s cache allocation for %q specified in configuration but not supported by system", lvl, name)
 			}
 		}
@@ -593,7 +593,7 @@ func (c *ctrlGroup) configure(name string, class *classConfig,
 	// Handle memory bandwidth allocation
 	switch {
 	case info.mb.Supported():
-		schemata += class.MBSchema.ToStr(partition.MB)
+		schemata += class.MBSchema.toStr(partition.MB)
 	default:
 		if class.MBSchema != nil && !options.MB.Optional {
 			return fmt.Errorf("memory bandwidth allocation for %q specified in configuration but not supported by system", name)
