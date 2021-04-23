@@ -103,7 +103,7 @@ func getRdtInfo() (*resctrlInfo, error) {
 	if err != nil {
 		return info, fmt.Errorf("failed to detect resctrl mount point: %v", err)
 	}
-	log.Info("detected resctrl filesystem at %q", info.resctrlPath)
+	log.Infof("detected resctrl filesystem at %q", info.resctrlPath)
 
 	// Check that RDT is available
 	infopath := filepath.Join(info.resctrlPath, "info")
