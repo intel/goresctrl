@@ -583,12 +583,12 @@ func (c *Config) resolveCatPartitions(lvl cacheLevel, conf partitionSet) error {
 		conf[name].CAT[lvl] = grant
 	}
 
-	log.Infof("actual (and requested) %s allocations per partition and cache id:", lvl)
+	heading := fmt.Sprintf("actual (and requested) %s allocations per partition and cache id:", lvl)
 	infoStr := ""
 	for name, partition := range resolver.requests {
-		infoStr += "\n    " + name
+		infoStr += name + "\n"
 		for _, id := range resolver.ids {
-			infoStr += fmt.Sprintf("\n      %2d: ", id)
+			infoStr += fmt.Sprintf("  %2d: ", id)
 			allocationReq := partition[id]
 			for _, typ := range []catSchemaType{catSchemaTypeUnified, catSchemaTypeCode, catSchemaTypeData} {
 				infoStr += string(typ) + " "
@@ -605,10 +605,10 @@ func (c *Config) resolveCatPartitions(lvl cacheLevel, conf partitionSet) error {
 					infoStr += "<not specified>  "
 				}
 			}
+			infoStr += "\n"
 		}
-		infoStr += "\n"
 	}
-	grclog.InfoBlock(log, "", "  ", "%s", infoStr)
+	grclog.DebugBlock(log, heading, "  ", "%s", infoStr)
 
 	return nil
 }
