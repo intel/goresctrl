@@ -32,6 +32,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	grclog "github.com/intel/goresctrl/pkg/log"
+	"github.com/intel/goresctrl/pkg/testutils"
 	"github.com/intel/goresctrl/pkg/utils"
 	testdata "github.com/intel/goresctrl/test/data"
 )
@@ -114,20 +115,6 @@ func parseTestConfig(t *testing.T, data string) *Config {
 		t.Fatalf("failed to parse rdt config: %v", err)
 	}
 	return c
-}
-
-func createTempConfigFile(t *testing.T, data string) string {
-	f, err := ioutil.TempFile("", "goresctrl-test-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString(data); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return f.Name()
 }
 
 // TestRdt tests the rdt public API, i.e. exported functionality of the package
@@ -247,7 +234,7 @@ partitions:
 		t.Fatalf("rdt configuration with non-existent file succeeded unexpetedly")
 	}
 	// Configuration should fail as "Stale" class has pids assigned to it
-	testConfigFile := createTempConfigFile(t, rdtTestConfig)
+	testConfigFile := testutils.CreateTempFile(t, rdtTestConfig)
 	defer os.Remove(testConfigFile)
 	if err := SetConfigFromFile(testConfigFile, false); err == nil {
 		t.Fatalf("rdt configuration succeeded unexpetedly")

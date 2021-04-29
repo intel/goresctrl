@@ -30,66 +30,66 @@ var blkioThrottleWriteBpsFiles = []string{"blkio.throttle.write_bps_device"}
 var blkioThrottleReadIOPSFiles = []string{"blkio.throttle.read_iops_device"}
 var blkioThrottleWriteIOPSFiles = []string{"blkio.throttle.write_iops_device"}
 
-// OciBlockIOParameters contains OCI standard configuration of cgroups blkio parameters.
+// BlockIOParameters contains cgroups blockio controller parameters.
 //
 // Effects of Weight and Rate values in SetBlkioParameters():
 // Value  |  Effect
 // -------+-------------------------------------------------------------------
-//    -1  |  Do not write to cgroups, value is missing
-//     0  |  Write to cgroups, will remove the setting as specified in cgroups blkio interface
-//  other |  Write to cgroups, sets the value
-type OciBlockIOParameters struct {
+//    -1  |  Do not write to cgroups, value is missing.
+//     0  |  Write to cgroups, will clear the setting as specified in cgroups blkio interface.
+//  other |  Write to cgroups, sets the value.
+type BlockIOParameters struct {
 	Weight                  int64
-	WeightDevice            OciDeviceWeights
-	ThrottleReadBpsDevice   OciDeviceRates
-	ThrottleWriteBpsDevice  OciDeviceRates
-	ThrottleReadIOPSDevice  OciDeviceRates
-	ThrottleWriteIOPSDevice OciDeviceRates
+	WeightDevice            DeviceWeights
+	ThrottleReadBpsDevice   DeviceRates
+	ThrottleWriteBpsDevice  DeviceRates
+	ThrottleReadIOPSDevice  DeviceRates
+	ThrottleWriteIOPSDevice DeviceRates
 }
 
-// OciDeviceWeight contains values for
+// DeviceWeight contains values for
 // - blkio.[io-scheduler].weight
-type OciDeviceWeight struct {
+type DeviceWeight struct {
 	Major  int64
 	Minor  int64
 	Weight int64
 }
 
-// OciDeviceRate contains values for
+// DeviceRate contains values for
 // - blkio.throttle.read_bps_device
 // - blkio.throttle.write_bps_device
 // - blkio.throttle.read_iops_device
 // - blkio.throttle.write_iops_device
-type OciDeviceRate struct {
+type DeviceRate struct {
 	Major int64
 	Minor int64
 	Rate  int64
 }
 
-// OciDeviceWeights contains weights for devices
-type OciDeviceWeights []OciDeviceWeight
+// DeviceWeights contains weights for devices.
+type DeviceWeights []DeviceWeight
 
-// OciDeviceRates contains throttling rates for devices
-type OciDeviceRates []OciDeviceRate
+// DeviceRates contains throttling rates for devices.
+type DeviceRates []DeviceRate
 
-// OciDeviceParameters interface provides functions common to OciDeviceWeights and OciDeviceRates
-type OciDeviceParameters interface {
+// DeviceParameters interface provides functions common to DeviceWeights and DeviceRates.
+type DeviceParameters interface {
 	Append(maj, min, val int64)
 	Update(maj, min, val int64)
 }
 
-// Append appends (major, minor, value) to OciDeviceWeights slice.
-func (w *OciDeviceWeights) Append(maj, min, val int64) {
-	*w = append(*w, OciDeviceWeight{Major: maj, Minor: min, Weight: val})
+// Append appends (major, minor, value) to DeviceWeights slice.
+func (w *DeviceWeights) Append(maj, min, val int64) {
+	*w = append(*w, DeviceWeight{Major: maj, Minor: min, Weight: val})
 }
 
-// Append appends (major, minor, value) to OciDeviceRates slice.
-func (r *OciDeviceRates) Append(maj, min, val int64) {
-	*r = append(*r, OciDeviceRate{Major: maj, Minor: min, Rate: val})
+// Append appends (major, minor, value) to DeviceRates slice.
+func (r *DeviceRates) Append(maj, min, val int64) {
+	*r = append(*r, DeviceRate{Major: maj, Minor: min, Rate: val})
 }
 
-// Update updates device weight in OciDeviceWeights slice, or appends it if not found.
-func (w *OciDeviceWeights) Update(maj, min, val int64) {
+// Update updates device weight in DeviceWeights slice, or appends it if not found.
+func (w *DeviceWeights) Update(maj, min, val int64) {
 	for index, devWeight := range *w {
 		if devWeight.Major == maj && devWeight.Minor == min {
 			(*w)[index].Weight = val
@@ -99,8 +99,8 @@ func (w *OciDeviceWeights) Update(maj, min, val int64) {
 	w.Append(maj, min, val)
 }
 
-// Update updates device rate in OciDeviceRates slice, or appends it if not found.
-func (r *OciDeviceRates) Update(maj, min, val int64) {
+// Update updates device rate in DeviceRates slice, or appends it if not found.
+func (r *DeviceRates) Update(maj, min, val int64) {
 	for index, devRate := range *r {
 		if devRate.Major == maj && devRate.Minor == min {
 			(*r)[index].Rate = val
@@ -110,25 +110,25 @@ func (r *OciDeviceRates) Update(maj, min, val int64) {
 	r.Append(maj, min, val)
 }
 
-// NewOciBlockIOParameters creates new OciBlockIOParameters instance.
-func NewOciBlockIOParameters() OciBlockIOParameters {
-	return OciBlockIOParameters{
+// NewBlockIOParameters creates new BlockIOParameters instance.
+func NewBlockIOParameters() BlockIOParameters {
+	return BlockIOParameters{
 		Weight: -1,
 	}
 }
 
-// NewOciDeviceWeight creates new OciDeviceWeight instance.
-func NewOciDeviceWeight() OciDeviceWeight {
-	return OciDeviceWeight{
+// NewDeviceWeight creates new DeviceWeight instance.
+func NewDeviceWeight() DeviceWeight {
+	return DeviceWeight{
 		Major:  -1,
 		Minor:  -1,
 		Weight: -1,
 	}
 }
 
-// NewOciDeviceRate creates new OciDeviceRate instance.
-func NewOciDeviceRate() OciDeviceRate {
-	return OciDeviceRate{
+// NewDeviceRate creates new DeviceRate instance.
+func NewDeviceRate() DeviceRate {
+	return DeviceRate{
 		Major: -1,
 		Minor: -1,
 		Rate:  -1,
@@ -140,12 +140,11 @@ type devMajMin struct {
 	Minor int64
 }
 
-// ResetBlkioParameters adds new, changes existing and removes missing blockIO parameters in cgroupsDir
-func ResetBlkioParameters(groupDir string, blockIO OciBlockIOParameters) error {
+// ResetBlkioParameters adds new, changes existing and removes missing blockIO parameters in cgroupsDir.
+func ResetBlkioParameters(groupDir string, blockIO BlockIOParameters) error {
 	var errors *multierror.Error
-	oldBlockIO, getErr := GetBlkioParameters(groupDir)
-	errors = multierror.Append(errors, getErr)
-	newBlockIO := NewOciBlockIOParameters()
+	oldBlockIO, _ := GetBlkioParameters(groupDir)
+	newBlockIO := NewBlockIOParameters()
 	newBlockIO.Weight = blockIO.Weight
 	newBlockIO.WeightDevice = resetDevWeights(oldBlockIO.WeightDevice, blockIO.WeightDevice)
 	newBlockIO.ThrottleReadBpsDevice = resetDevRates(oldBlockIO.ThrottleReadBpsDevice, blockIO.ThrottleReadBpsDevice)
@@ -156,9 +155,9 @@ func ResetBlkioParameters(groupDir string, blockIO OciBlockIOParameters) error {
 	return errors.ErrorOrNil()
 }
 
-// resetDevWeights adds wanted weight parameters to new and resets unwanted weights
-func resetDevWeights(old, wanted []OciDeviceWeight) []OciDeviceWeight {
-	new := []OciDeviceWeight{}
+// resetDevWeights adds wanted weight parameters to new and resets unwanted weights.
+func resetDevWeights(old, wanted []DeviceWeight) []DeviceWeight {
+	new := []DeviceWeight{}
 	seenDev := map[devMajMin]bool{}
 	for _, wdp := range wanted {
 		seenDev[devMajMin{wdp.Major, wdp.Minor}] = true
@@ -166,15 +165,15 @@ func resetDevWeights(old, wanted []OciDeviceWeight) []OciDeviceWeight {
 	}
 	for _, wdp := range old {
 		if !seenDev[devMajMin{wdp.Major, wdp.Minor}] {
-			new = append(new, OciDeviceWeight{wdp.Major, wdp.Minor, 0})
+			new = append(new, DeviceWeight{wdp.Major, wdp.Minor, 0})
 		}
 	}
 	return new
 }
 
-// resetDevRates adds wanted rate parameters to new and resets unwanted rates
-func resetDevRates(old, wanted []OciDeviceRate) []OciDeviceRate {
-	new := []OciDeviceRate{}
+// resetDevRates adds wanted rate parameters to new and resets unwanted rates.
+func resetDevRates(old, wanted []DeviceRate) []DeviceRate {
+	new := []DeviceRate{}
 	seenDev := map[devMajMin]bool{}
 	for _, rdp := range wanted {
 		new = append(new, rdp)
@@ -182,27 +181,27 @@ func resetDevRates(old, wanted []OciDeviceRate) []OciDeviceRate {
 	}
 	for _, rdp := range old {
 		if !seenDev[devMajMin{rdp.Major, rdp.Minor}] {
-			new = append(new, OciDeviceRate{rdp.Major, rdp.Minor, 0})
+			new = append(new, DeviceRate{rdp.Major, rdp.Minor, 0})
 		}
 	}
 	return new
 }
 
-// GetBlkioParameters returns OCI BlockIO parameters from files in cgroups blkio controller directory.
-func GetBlkioParameters(group string) (OciBlockIOParameters, error) {
+// GetBlkioParameters returns BlockIO parameters from files in cgroups blkio controller directory.
+func GetBlkioParameters(group string) (BlockIOParameters, error) {
 	var errors *multierror.Error
-	blockIO := NewOciBlockIOParameters()
+	blockIO := NewBlockIOParameters()
 
 	errors = multierror.Append(errors, readWeight(group, blkioWeightFiles, &blockIO.Weight))
-	errors = multierror.Append(errors, readOciDeviceParameters(group, blkioWeightDeviceFiles, &blockIO.WeightDevice))
-	errors = multierror.Append(errors, readOciDeviceParameters(group, blkioThrottleReadBpsFiles, &blockIO.ThrottleReadBpsDevice))
-	errors = multierror.Append(errors, readOciDeviceParameters(group, blkioThrottleWriteBpsFiles, &blockIO.ThrottleWriteBpsDevice))
-	errors = multierror.Append(errors, readOciDeviceParameters(group, blkioThrottleReadIOPSFiles, &blockIO.ThrottleReadIOPSDevice))
-	errors = multierror.Append(errors, readOciDeviceParameters(group, blkioThrottleWriteIOPSFiles, &blockIO.ThrottleWriteIOPSDevice))
+	errors = multierror.Append(errors, readDeviceParameters(group, blkioWeightDeviceFiles, &blockIO.WeightDevice))
+	errors = multierror.Append(errors, readDeviceParameters(group, blkioThrottleReadBpsFiles, &blockIO.ThrottleReadBpsDevice))
+	errors = multierror.Append(errors, readDeviceParameters(group, blkioThrottleWriteBpsFiles, &blockIO.ThrottleWriteBpsDevice))
+	errors = multierror.Append(errors, readDeviceParameters(group, blkioThrottleReadIOPSFiles, &blockIO.ThrottleReadIOPSDevice))
+	errors = multierror.Append(errors, readDeviceParameters(group, blkioThrottleWriteIOPSFiles, &blockIO.ThrottleWriteIOPSDevice))
 	return blockIO, errors.ErrorOrNil()
 }
 
-// readWeight parses int64 from a cgroups entry
+// readWeight parses int64 from a cgroups entry.
 func readWeight(groupDir string, filenames []string, rv *int64) error {
 	contents, err := readFirstFile(groupDir, filenames)
 	if err != nil {
@@ -216,8 +215,8 @@ func readWeight(groupDir string, filenames []string, rv *int64) error {
 	return nil
 }
 
-// readOciDeviceParameters parses device lines used for weights and throttling rates
-func readOciDeviceParameters(groupDir string, filenames []string, params OciDeviceParameters) error {
+// readDeviceParameters parses device lines used for weights and throttling rates.
+func readDeviceParameters(groupDir string, filenames []string, params DeviceParameters) error {
 	var errors *multierror.Error
 	contents, err := readFirstFile(groupDir, filenames)
 	if err != nil {
@@ -269,8 +268,8 @@ func readFirstFile(groupDir string, filenames []string) (string, error) {
 	return "", nil
 }
 
-// SetBlkioParameters writes OCI BlockIO parameters to files in cgroups blkio contoller directory.
-func SetBlkioParameters(group string, blockIO OciBlockIOParameters) error {
+// SetBlkioParameters writes BlockIO parameters to files in cgroups blkio contoller directory.
+func SetBlkioParameters(group string, blockIO BlockIOParameters) error {
 	var errors *multierror.Error
 	if blockIO.Weight >= 0 {
 		errors = multierror.Append(errors, writeFirstFile(group, blkioWeightFiles, "%d", blockIO.Weight))
