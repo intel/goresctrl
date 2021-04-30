@@ -498,11 +498,8 @@ func (c *Config) resolve() (config, error) {
 	}
 
 	conf.Classes, err = c.resolveClasses()
-	if err != nil {
-		return conf, err
-	}
 
-	return conf, nil
+	return conf, err
 }
 
 // resolvePartitions tries to resolve the requested resource allocations of
