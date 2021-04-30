@@ -1172,7 +1172,7 @@ func (c CacheProportion) parse(minBits uint64) (cacheAllocation, error) {
 	// Sanity check of absolute allocation: bitmask must (only) contain one
 	// contiguous block of ones wide enough
 	numOnes := bits.OnesCount64(value)
-	if numOnes != 64-bits.LeadingZeros64(value)-bits.TrailingZeros64(value) {
+	if numOnes != bits.Len64(value)-bits.TrailingZeros64(value) {
 		return nil, fmt.Errorf("invalid cache bitmask %q: more than one continuous block of ones", c)
 	}
 	if uint64(numOnes) < minBits {
