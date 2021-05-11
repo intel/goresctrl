@@ -124,6 +124,14 @@ partitions:
         mbAllocation:
           # MB allocation spec of the class
           <cache-ids>: <mb-allocation-spec>
+
+        # Settings for the Kubernetes helper functions. Have no effect on the resctrl
+        # configuration and control interface.
+        kubernetes:
+          # Set to true to deny assigning to this class via container annotation
+          denyContainerAnnotation: [true|false]
+          # Set to true to deny assigning to this class via pod annotation
+          denyPodAnnotation: [true|false]
 ```
 
 | Field | Format | Example | Description |

@@ -37,9 +37,10 @@ type Config struct {
 		L3Allocation CatConfig `json:"l3Allocation"`
 		MBAllocation MbaConfig `json:"mbAllocation"`
 		Classes      map[string]struct {
-			L2Allocation CatConfig `json:"l2Allocation"`
-			L3Allocation CatConfig `json:"l3Allocation"`
-			MBAllocation MbaConfig `json:"mbAllocation"`
+			L2Allocation CatConfig         `json:"l2Allocation"`
+			L3Allocation CatConfig         `json:"l3Allocation"`
+			MBAllocation MbaConfig         `json:"mbAllocation"`
+			Kubernetes   KubernetesOptions `json:"kubernetes"`
 		} `json:"classes"`
 	} `json:"partitions"`
 }
@@ -113,9 +114,10 @@ type partitionConfig struct {
 // classConfig represents configuration of one class, i.e. one CTRL group in
 // the Linux resctrl interface
 type classConfig struct {
-	Partition string
-	CATSchema map[cacheLevel]catSchema
-	MBSchema  mbSchema
+	Partition  string
+	CATSchema  map[cacheLevel]catSchema
+	MBSchema   mbSchema
+	Kubernetes KubernetesOptions
 }
 
 // Options contains common settings.
@@ -133,6 +135,12 @@ type CatOptions struct {
 // MbOptions contains the common settings for memory bandwidth allocation.
 type MbOptions struct {
 	Optional bool
+}
+
+// KubernetesOptions contains per-class settings for the Kubernetes-related functionality.
+type KubernetesOptions struct {
+	DenyPodAnnotation       bool `json:"denyPodAnnotation"`
+	DenyContainerAnnotation bool `json:"denyContainerAnnotation"`
 }
 
 // catSchema represents a cache part of the schemata of a class (i.e. resctrl group)
@@ -816,9 +824,7 @@ func (c *Config) resolveClasses() (classSet, error) {
 
 	for bname, partition := range c.Partitions {
 		for gname, class := range partition.Classes {
-			if isRootClass(gname) {
-				gname = RootClassName
-			}
+			gname = unaliasClassName(gname)
 
 			if !IsQualifiedClassName(gname) {
 				return classes, fmt.Errorf("unqualified class name %q (must not be '.' or '..' and must not contain '/' or newline)", gname)
@@ -829,7 +835,8 @@ func (c *Config) resolveClasses() (classSet, error) {
 
 			var err error
 			gc := &classConfig{Partition: bname,
-				CATSchema: make(map[cacheLevel]catSchema)}
+				CATSchema:  make(map[cacheLevel]catSchema),
+				Kubernetes: class.Kubernetes}
 
 			gc.CATSchema[L2], err = class.L2Allocation.toSchema(L2)
 			if err != nil {

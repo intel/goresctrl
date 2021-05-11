@@ -301,10 +301,7 @@ func IsQualifiedClassName(name string) bool {
 }
 
 func (c *control) getClass(name string) (CtrlGroup, bool) {
-	if isRootClass(name) {
-		name = RootClassName
-	}
-	cls, ok := c.classes[name]
+	cls, ok := c.classes[unaliasClassName(name)]
 	return cls, ok
 }
 
@@ -852,4 +849,11 @@ func resctrlGroupsFromFs(prefix string, path string) ([]string, error) {
 
 func isRootClass(name string) bool {
 	return name == RootClassName || name == RootClassAlias
+}
+
+func unaliasClassName(name string) string {
+	if isRootClass(name) {
+		return RootClassName
+	}
+	return name
 }
