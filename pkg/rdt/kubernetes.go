@@ -39,10 +39,6 @@ const (
 // container. Verifies that the class exists in goresctrl configuration and that
 // it is allowed to be used.
 func ContainerClassFromAnnotations(containerName string, containerAnnotations, podAnnotations map[string]string) (string, error) {
-	if rdt == nil {
-		return "", fmt.Errorf("RDT not initialized")
-	}
-
 	fromPodAnnotation := false
 	clsName, ok := containerAnnotations[RdtContainerAnnotation]
 	if !ok {
@@ -55,6 +51,10 @@ func ContainerClassFromAnnotations(containerName string, containerAnnotations, p
 	}
 
 	if ok {
+		if rdt == nil {
+			return "", fmt.Errorf("RDT not initialized, class %q not available", clsName)
+		}
+
 		// Verify validity of class name
 		if !IsQualifiedClassName(clsName) {
 			return "", fmt.Errorf("unqualified RDT class name %q", clsName)

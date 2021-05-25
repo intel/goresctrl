@@ -26,10 +26,8 @@ func TestContainerClassFromAnnotations(t *testing.T) {
 	}
 
 	containerName := "test-container"
-	containerAnnotations := map[string]string{RdtContainerAnnotation: "class-1"}
-	podAnnotations := map[string]string{
-		RdtPodAnnotationContainerPrefix + containerName: "class-2",
-		RdtPodAnnotation: "class-3"}
+	containerAnnotations := map[string]string{}
+	podAnnotations := map[string]string{}
 
 	// Helper function for checking test cases
 	tc := func(expectError bool, expectedClsName string) {
@@ -46,7 +44,16 @@ func TestContainerClassFromAnnotations(t *testing.T) {
 	//
 	// 1. Test container annotation
 	//
+
+	// Should succeed when rdt is uninitialized but annotations are empty
 	rdt = nil
+	tc(false, "")
+
+	// Should fail when rdt is uninitialized but annotations point to a class
+	containerAnnotations = map[string]string{RdtContainerAnnotation: "class-1"}
+	podAnnotations = map[string]string{
+		RdtPodAnnotationContainerPrefix + containerName: "class-2",
+		RdtPodAnnotation: "class-3"}
 	tc(true, "")
 
 	// Mock configured rdt which enables the functionality
