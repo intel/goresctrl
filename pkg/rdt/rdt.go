@@ -64,7 +64,7 @@ import (
 const (
 	// RootClassName is the name we use in our config for the special class
 	// that configures the "root" resctrl group of the system
-	RootClassName = "DEFAULT"
+	RootClassName = "system/default"
 	// RootClassAlias is an alternative name for the root class
 	RootClassAlias = ""
 )
@@ -297,7 +297,7 @@ func GetMonFeatures() map[MonResource][]string {
 // IsQualifiedClassName returns true if given string qualifies as a class name
 func IsQualifiedClassName(name string) bool {
 	// Must be qualified as a file name
-	return len(name) < 4096 && name != "." && name != ".." && !strings.ContainsAny(name, "/\n")
+	return name == RootClassName || (len(name) < 4096 && name != "." && name != ".." && !strings.ContainsAny(name, "/\n"))
 }
 
 func (c *control) getClass(name string) (CtrlGroup, bool) {
