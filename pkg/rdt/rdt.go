@@ -294,6 +294,12 @@ func GetMonFeatures() map[MonResource][]string {
 	return map[MonResource][]string{}
 }
 
+// IsQualifiedClassName returns true if given string qualifies as a class name
+func IsQualifiedClassName(name string) bool {
+	// Must be qualified as a file name
+	return len(name) < 4096 && name != "." && name != ".." && !strings.ContainsAny(name, "/\n")
+}
+
 func (c *control) getClass(name string) (CtrlGroup, bool) {
 	if isRootClass(name) {
 		name = RootClassName

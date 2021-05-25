@@ -699,6 +699,18 @@ partitions:
 		},
 		// Testcase
 		TC{
+			name:        "invalid class name",
+			fs:          "resctrl.nomb",
+			configErrRe: `unqualified class name`,
+			config: `
+partitions:
+  part-1:
+    classes:
+      "..":
+`,
+		},
+		// Testcase
+		TC{
 			name:        "Invalid cache ids (fail)",
 			fs:          "resctrl.nomb",
 			configErrRe: `failed to parse L3 allocation request for partition "part-1": invalid integer "a"`,
@@ -1677,5 +1689,23 @@ func TestCacheProportion(t *testing.T) {
 	}
 	if _, err := CacheProportion("3-x").parse(2); err == nil {
 		t.Errorf("unexpected success when parsing bitmask cache allocation")
+	}
+}
+
+func TestIsQualifiedClassName(t *testing.T) {
+	tcs := map[string]bool{
+		"foo":          true,
+		RootClassName:  true,
+		RootClassAlias: true,
+		".":            false,
+		"..":           false,
+		"foo/bar":      false,
+		"foo\n":        false,
+	}
+
+	for name, expected := range tcs {
+		if r := IsQualifiedClassName(name); r != expected {
+			t.Errorf("IsQualifiedClassName(%q) returned %v (expected %v)", name, r, expected)
+		}
 	}
 }

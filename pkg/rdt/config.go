@@ -820,6 +820,9 @@ func (c *Config) resolveClasses() (classSet, error) {
 				gname = RootClassName
 			}
 
+			if !IsQualifiedClassName(gname) {
+				return classes, fmt.Errorf("unqualified class name %q (must not be '.' or '..' and must not contain '/' or newline)", gname)
+			}
 			if _, ok := classes[gname]; ok {
 				return classes, fmt.Errorf("class names must be unique, %q defined multiple times", gname)
 			}
