@@ -146,6 +146,10 @@ partitions:
           all: 66%
         mbAllocation:
           all: [33%]
+        kubernetes:
+          denyPodAnnotation: true
+kubernetes:
+  allowedPodAnnotationClasses: [bar, foo]
 `
 
 	verifyGroupNames := func(a interface{}, b []string) {
@@ -180,6 +184,7 @@ partitions:
 	//
 	// 1. test uninitialized interface
 	//
+	rdt = nil
 	SetLogger(grclog.NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt-test-1 ] ", 0)))
 
 	if err := SetConfig(&Config{}, false); err == nil {
@@ -242,6 +247,11 @@ partitions:
 	// Forced configuration should succeed
 	if err := SetConfigFromFile(testConfigFile, true); err != nil {
 		t.Fatalf("rdt forced configuration failed: %v", err)
+	}
+
+	// Check that KubernetesOptions of classes are parsed and propagated correctly
+	if !rdt.conf.Classes["BestEffort"].Kubernetes.DenyPodAnnotation {
+		t.Fatal("DenyPodAnnotation of class BestEffort should be 'true'")
 	}
 
 	// Check that SetLogger() takes effect in the control interface, too
