@@ -18,6 +18,8 @@ package rdt
 
 import (
 	"testing"
+
+	"github.com/intel/goresctrl/pkg/kubernetes"
 )
 
 func TestContainerClassFromAnnotations(t *testing.T) {
@@ -50,10 +52,10 @@ func TestContainerClassFromAnnotations(t *testing.T) {
 	tc(false, "")
 
 	// Should fail when rdt is uninitialized but annotations point to a class
-	containerAnnotations = map[string]string{RdtContainerAnnotation: "class-1"}
+	containerAnnotations = map[string]string{kubernetes.RdtContainerAnnotation: "class-1"}
 	podAnnotations = map[string]string{
-		RdtPodAnnotationContainerPrefix + containerName: "class-2",
-		RdtPodAnnotation: "class-3"}
+		kubernetes.RdtPodAnnotationContainerPrefix + containerName: "class-2",
+		kubernetes.RdtPodAnnotation:                                "class-3"}
 	tc(true, "")
 
 	// Mock configured rdt which enables the functionality
@@ -75,13 +77,13 @@ func TestContainerClassFromAnnotations(t *testing.T) {
 	tc(true, "")
 
 	// Test invalid class name
-	containerAnnotations[RdtContainerAnnotation] = "foo/bar"
+	containerAnnotations[kubernetes.RdtContainerAnnotation] = "foo/bar"
 	tc(true, "")
 
 	//
 	// 2. Test per-container Pod annotation
 	//
-	delete(containerAnnotations, RdtContainerAnnotation)
+	delete(containerAnnotations, kubernetes.RdtContainerAnnotation)
 	tc(false, "class-2")
 
 	// Should fail when pod annotations for the class are denied
@@ -91,7 +93,7 @@ func TestContainerClassFromAnnotations(t *testing.T) {
 	//
 	// 3. Test pod-wide Pod annotation
 	//
-	delete(podAnnotations, RdtPodAnnotationContainerPrefix+containerName)
+	delete(podAnnotations, kubernetes.RdtPodAnnotationContainerPrefix+containerName)
 	tc(false, "class-3")
 
 	// Should fail when pod annotations for the class are denied
@@ -101,6 +103,6 @@ func TestContainerClassFromAnnotations(t *testing.T) {
 	//
 	// Test empty annotations
 	//
-	delete(podAnnotations, RdtPodAnnotation)
+	delete(podAnnotations, kubernetes.RdtPodAnnotation)
 	tc(false, "")
 }
