@@ -18,6 +18,7 @@ package rdt
 
 import (
 	"fmt"
+	"github.com/intel/goresctrl/pkg/kubernetes"
 )
 
 const (
@@ -39,18 +40,11 @@ const (
 // container. Verifies that the class exists in goresctrl configuration and that
 // it is allowed to be used.
 func ContainerClassFromAnnotations(containerName string, containerAnnotations, podAnnotations map[string]string) (string, error) {
-	fromPodAnnotation := false
-	clsName, ok := containerAnnotations[RdtContainerAnnotation]
-	if !ok {
-		fromPodAnnotation = true
-		clsName, ok = podAnnotations[RdtPodAnnotationContainerPrefix+containerName]
+	clsName, clsOrigin := kubernetes.ContainerClassFromAnnotations(
+		RdtContainerAnnotation, RdtPodAnnotation, RdtPodAnnotationContainerPrefix,
+		containerName, containerAnnotations, podAnnotations)
 
-		if !ok {
-			clsName, ok = podAnnotations[RdtPodAnnotation]
-		}
-	}
-
-	if ok {
+	if clsOrigin != kubernetes.ClassOriginNotFound {
 		if rdt == nil {
 			return "", fmt.Errorf("RDT not initialized, class %q not available", clsName)
 		}
@@ -68,9 +62,9 @@ func ContainerClassFromAnnotations(containerName string, containerAnnotations, p
 		// If classes have been configured by goresctrl
 		if clsConf, ok := rdt.conf.Classes[unaliasClassName(clsName)]; ok {
 			// Check that the class is allowed
-			if fromPodAnnotation && clsConf.Kubernetes.DenyPodAnnotation {
+			if clsOrigin == kubernetes.ClassOriginPodAnnotation && clsConf.Kubernetes.DenyPodAnnotation {
 				return "", fmt.Errorf("RDT class %q not allowed from Pod annotations", clsName)
-			} else if !fromPodAnnotation && clsConf.Kubernetes.DenyContainerAnnotation {
+			} else if clsOrigin == kubernetes.ClassOriginContainerAnnotation && clsConf.Kubernetes.DenyContainerAnnotation {
 				return "", fmt.Errorf("RDT class %q not allowed from Container annotation", clsName)
 			}
 		}
