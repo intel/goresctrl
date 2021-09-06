@@ -205,7 +205,8 @@ func GetPackageInfo(pkgId utils.ID) (SstPackageInfo, error) {
 	return info, nil
 }
 
-func getCPUClosID(cpu utils.ID) (int, error) {
+// GetCPUClosID returns the SST-CP CLOS id that a cpu is associated with.
+func GetCPUClosID(cpu utils.ID) (int, error) {
 	p, err := punitCPU(cpu)
 	if err != nil {
 		return -1, err
@@ -217,18 +218,6 @@ func getCPUClosID(cpu utils.ID) (int, error) {
 		return 0, fmt.Errorf("failed to read CLOS number of cpu %d: %v", cpu, err)
 	}
 	return int(getBits(rsp, 16, 17)), nil
-}
-
-func getCPUClosIDs(cpus []utils.ID) ([]int, error) {
-	ret := make([]int, len(cpus))
-	for i, cpu := range cpus {
-		id, err := getCPUClosID(cpu)
-		if err != nil {
-			return ret, err
-		}
-		ret[i] = id
-	}
-	return ret, nil
 }
 
 func getBits(val, i, j uint32) uint32 {
