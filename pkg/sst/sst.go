@@ -121,18 +121,19 @@ func GetPackageInfo(pkgId utils.ID) (SstPackageInfo, error) {
 	}
 
 	// Read the status of currently active perf-profile
-	if info.PPSupported {
-		if rsp, err = sendMboxCmd(cpu, CONFIG_TDP, CONFIG_TDP_GET_TDP_CONTROL, uint32(info.PPCurrentLevel)); err != nil {
-			return info, fmt.Errorf("failed to read SST BF/TF status: %v", err)
-		}
-
-		info.BFSupported = isBitSet(rsp, 1)
-		info.BFEnabled = isBitSet(rsp, 17)
-
-		info.TFSupported = isBitSet(rsp, 0)
-		info.TFEnabled = isBitSet(rsp, 16)
-
+	if !info.PPSupported {
+		sstlog.Debugf("SST PP feature not supported, only profile level %d is valid", info.PPCurrentLevel)
 	}
+
+	if rsp, err = sendMboxCmd(cpu, CONFIG_TDP, CONFIG_TDP_GET_TDP_CONTROL, uint32(info.PPCurrentLevel)); err != nil {
+		return info, fmt.Errorf("failed to read SST BF/TF status: %v", err)
+	}
+
+	info.BFSupported = isBitSet(rsp, 1)
+	info.BFEnabled = isBitSet(rsp, 17)
+
+	info.TFSupported = isBitSet(rsp, 0)
+	info.TFEnabled = isBitSet(rsp, 16)
 
 	// Read base-frequency info
 	if info.BFSupported {
