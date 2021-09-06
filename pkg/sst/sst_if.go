@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package sysfs
+package sst
 
 //go:generate ./gen_sst_types.sh
 
@@ -23,13 +23,15 @@ import (
 	"os"
 	"syscall"
 	"unsafe"
+
+	"github.com/intel/goresctrl/pkg/utils"
 )
 
 // cpuMap holds the logical to punit cpu mapping table
-var cpuMap = make(map[ID]ID)
+var cpuMap = make(map[utils.ID]utils.ID)
 
 // punitCPU returns the PUNIT CPU id corresponding a given Linux logical CPU
-func punitCPU(cpu ID) (ID, error) {
+func punitCPU(cpu utils.ID) (utils.ID, error) {
 	if id, ok := cpuMap[cpu]; ok {
 		return id, nil
 	}
@@ -60,7 +62,7 @@ func isstIoctl(ioctl uintptr, req uintptr) error {
 // PUNIT CPU number for one cpu. This is needed because the PUNIT CPU/core
 // numbering differs from the Linux kernel numbering (exposed via sysfs) which
 // is based on APIC.
-func getCPUMapping(cpu ID) (ID, error) {
+func getCPUMapping(cpu utils.ID) (utils.ID, error) {
 	req := isstIfCPUMaps{
 		Cmd_count: 1,
 		Cpu_map: [1]isstIfCPUMap{
@@ -72,11 +74,11 @@ func getCPUMapping(cpu ID) (ID, error) {
 		return -1, fmt.Errorf("failed to get CPU mapping for cpu %d: %v", cpu, err)
 	}
 
-	return ID(req.Cpu_map[0].Physical_cpu), nil
+	return utils.ID(req.Cpu_map[0].Physical_cpu), nil
 }
 
 // sendMboxCmd sends one mailbox command to PUNIT
-func sendMboxCmd(cpu ID, cmd uint16, subCmd uint16, reqData uint32) (uint32, error) {
+func sendMboxCmd(cpu utils.ID, cmd uint16, subCmd uint16, reqData uint32) (uint32, error) {
 	req := isstIfMboxCmds{
 		Cmd_count: 1,
 		Mbox_cmd: [1]isstIfMboxCmd{
@@ -89,17 +91,17 @@ func sendMboxCmd(cpu ID, cmd uint16, subCmd uint16, reqData uint32) (uint32, err
 		},
 	}
 
-	sstlog.Debug("MBOX SEND cpu: %d cmd: %#02x sub: %#02x data: %#x", cpu, cmd, subCmd, reqData)
+	sstlog.Debugf("MBOX SEND cpu: %d cmd: %#02x sub: %#02x data: %#x", cpu, cmd, subCmd, reqData)
 	if err := isstIoctl(ISST_IF_MBOX_COMMAND, uintptr(unsafe.Pointer(&req))); err != nil {
 		return 0, fmt.Errorf("Mbox command failed with %v", err)
 	}
-	sstlog.Debug("MBOX RECV data: %#x", req.Mbox_cmd[0].Resp_data)
+	sstlog.Debugf("MBOX RECV data: %#x", req.Mbox_cmd[0].Resp_data)
 
 	return req.Mbox_cmd[0].Resp_data, nil
 }
 
 // sendMMIOCmd sends one MMIO command to PUNIT
-func sendMMIOCmd(cpu ID, reg uint32) (uint32, error) {
+func sendMMIOCmd(cpu utils.ID, reg uint32) (uint32, error) {
 	req := isstIfIoRegs{
 		Req_count: 1,
 		Io_reg: [1]isstIfIoReg{
@@ -109,11 +111,11 @@ func sendMMIOCmd(cpu ID, reg uint32) (uint32, error) {
 			},
 		},
 	}
-	sstlog.Debug("MMIO SEND cpu: %d reg: %#x", cpu, reg)
+	sstlog.Debugf("MMIO SEND cpu: %d reg: %#x", cpu, reg)
 	if err := isstIoctl(ISST_IF_IO_CMD, uintptr(unsafe.Pointer(&req))); err != nil {
 		return 0, fmt.Errorf("MMIO command failed with %v", err)
 	}
-	sstlog.Debug("MMIO RECV data: %#x", req.Io_reg[0].Value)
+	sstlog.Debugf("MMIO RECV data: %#x", req.Io_reg[0].Value)
 
 	return req.Io_reg[0].Value, nil
 }

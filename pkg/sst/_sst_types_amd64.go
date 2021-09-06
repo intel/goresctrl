@@ -17,7 +17,7 @@ limitations under the License.
 */
 
 // This file is used for auto-generation of sst_types_amd64.go
-package sysfs
+package sst
 
 // #include <linux/isst_if.h>
 // #include <linux/ioctl.h>

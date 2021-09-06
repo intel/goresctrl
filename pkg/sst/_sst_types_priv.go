@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // This file is used for auto-generation of sst_types_priv.go
-package sysfs
+package sst
 
 // #include "tools/power/x86/intel-speed-select/isst.h"
 //

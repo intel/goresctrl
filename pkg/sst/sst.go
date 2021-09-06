@@ -14,13 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package sysfs
+package sst
 
 import (
 	"fmt"
+	stdlog "log"
 	"os"
 
-	logger "github.com/intel/cri-resource-manager/pkg/log"
+	grclog "github.com/intel/goresctrl/pkg/log"
+	"github.com/intel/goresctrl/pkg/utils"
 )
 
 // SstPackageInfo contains status of Intel Speed Select Technologies (SST)
@@ -39,7 +41,7 @@ type SstPackageInfo struct {
 	CPPriority  CPPriorityType
 	BFSupported bool
 	BFEnabled   bool
-	BFCores     IDSet
+	BFCores     utils.IDSet
 	TFSupported bool
 	TFEnabled   bool
 
@@ -68,29 +70,39 @@ const (
 
 const isstDevPath = "/dev/isst_interface"
 
-var sstlog = logger.NewLogger("sst")
+var sstlog grclog.Logger = grclog.NewLoggerWrapper(stdlog.New(os.Stderr, "[ sst ] ", 0))
 
 // SstSupported returns true if Intel Speed Select Technologies (SST) is supported
 // by the system and can be interfaced via the Linux kernel device
 func SstSupported() bool {
 	if _, err := os.Stat(isstDevPath); err != nil {
 		if !os.IsNotExist(err) {
-			sstlog.Warn("failed to access sst device %q: %v", isstDevPath, err)
+			sstlog.Warnf("failed to access sst device %q: %v", isstDevPath, err)
 		} else {
-			sstlog.Debug("sst device %q does not exist", isstDevPath)
+			sstlog.Debugf("sst device %q does not exist", isstDevPath)
 		}
 		return false
 	}
 	return true
 }
 
-func getSstPackageInfo(pkg *cpuPackage) (SstPackageInfo, error) {
+// GetPackageInfo returns information of the SST configuration of one cpu
+// package.
+func GetPackageInfo(pkgId utils.ID) (SstPackageInfo, error) {
 	info := SstPackageInfo{}
-	ids := pkg.cpus.SortedMembers()
-	cpu := ids[0] // We just need to pass one logical cpu from the pkg as an arg
+
+	// Get topology information from sysfs
+	packages, err := getOnlineCpuPackages()
+	if err != nil {
+		return info, fmt.Errorf("failed to determine cpu topology: %w", err)
+	}
+	pkg, ok := packages[pkgId]
+	if !ok {
+		return info, fmt.Errorf("cpu package %d not present", pkgId)
+	}
+	cpu := pkg.cpus[0] // We just need to pass one logical cpu from the pkg as an arg
 
 	var rsp uint32
-	var err error
 
 	// Read perf-profile feature info
 	if rsp, err = sendMboxCmd(cpu, CONFIG_TDP, CONFIG_TDP_GET_LEVELS_INFO, 0); err != nil {
@@ -104,7 +116,7 @@ func getSstPackageInfo(pkg *cpuPackage) (SstPackageInfo, error) {
 
 	// Forget about older hw with partial/convoluted support
 	if info.PPVersion < 3 {
-		sstlog.Info("SST PP version %d (less than 3), giving up...")
+		sstlog.Infof("SST PP version %d (less than 3), giving up...")
 		return info, nil
 	}
 
@@ -124,18 +136,18 @@ func getSstPackageInfo(pkg *cpuPackage) (SstPackageInfo, error) {
 
 	// Read base-frequency info
 	if info.BFSupported {
-		info.BFCores = IDSet{}
+		info.BFCores = utils.IDSet{}
 
-		punitCoreIDs := make(map[ID]IDSet, len(ids))
-		var maxPunitCore ID
-		for _, id := range ids {
+		punitCoreIDs := make(map[utils.ID]utils.IDSet, len(pkg.cpus))
+		var maxPunitCore utils.ID
+		for _, id := range pkg.cpus {
 			pc, err := punitCPU(id)
 			if err != nil {
 				return info, err
 			}
 			punitCore := pc >> 1
 			if _, ok := punitCoreIDs[punitCore]; !ok {
-				punitCoreIDs[punitCore] = IDSet{}
+				punitCoreIDs[punitCore] = utils.IDSet{}
 			}
 			punitCoreIDs[punitCore].Add(id)
 			if punitCore > maxPunitCore {
@@ -150,7 +162,7 @@ func getSstPackageInfo(pkg *cpuPackage) (SstPackageInfo, error) {
 			}
 			for bit := 0; bit < 32; bit++ {
 				if isBitSet(rsp, uint32(bit)) {
-					info.BFCores.Add(punitCoreIDs[ID(i*32+bit)].Members()...)
+					info.BFCores.Add(punitCoreIDs[utils.ID(i*32+bit)].Members()...)
 				}
 			}
 		}
@@ -171,7 +183,7 @@ func getSstPackageInfo(pkg *cpuPackage) (SstPackageInfo, error) {
 
 		closEnabled := isBitSet(rsp, 1)
 		if closEnabled != info.CPEnabled {
-			sstlog.Warn("SST firmware returned conflicting CP enabled status %v vs. %v", info.CPEnabled, closEnabled)
+			sstlog.Warnf("SST firmware returned conflicting CP enabled status %v vs. %v", info.CPEnabled, closEnabled)
 		}
 		info.CPEnabled = closEnabled
 		info.CPPriority = CPPriorityType(getBits(rsp, 2, 2))
@@ -193,7 +205,7 @@ func getSstPackageInfo(pkg *cpuPackage) (SstPackageInfo, error) {
 	return info, nil
 }
 
-func getCPUClosID(cpu ID) (int, error) {
+func getCPUClosID(cpu utils.ID) (int, error) {
 	p, err := punitCPU(cpu)
 	if err != nil {
 		return -1, err
@@ -207,7 +219,7 @@ func getCPUClosID(cpu ID) (int, error) {
 	return int(getBits(rsp, 16, 17)), nil
 }
 
-func getCPUClosIDs(cpus []ID) ([]int, error) {
+func getCPUClosIDs(cpus []utils.ID) ([]int, error) {
 	ret := make([]int, len(cpus))
 	for i, cpu := range cpus {
 		id, err := getCPUClosID(cpu)

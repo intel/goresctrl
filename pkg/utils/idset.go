@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package sysfs
+package utils
 
 import (
 	"encoding/json"
@@ -22,8 +22,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )
 
 const (
@@ -32,7 +30,7 @@ const (
 )
 
 // ID is nn integer id, used to identify packages, CPUs, nodes, etc.
-type ID int
+type ID = int
 
 // IDSet is an unordered set of integer ids.
 type IDSet map[ID]struct{}
@@ -122,20 +120,6 @@ func (s IDSet) SortedMembers() []ID {
 		return ids[i] < ids[j]
 	})
 	return ids
-}
-
-// CPUSet returns a cpuset.CPUSet corresponding to an id set.
-func (s IDSet) CPUSet() cpuset.CPUSet {
-	b := cpuset.NewBuilder()
-	for id := range s {
-		b.Add(int(id))
-	}
-	return b.Result()
-}
-
-// FromCPUSet returns an id set corresponding to a cpuset.CPUSet.
-func FromCPUSet(cset cpuset.CPUSet) IDSet {
-	return NewIDSetFromIntSlice(cset.ToSlice()...)
 }
 
 // String returns the set as a string.
