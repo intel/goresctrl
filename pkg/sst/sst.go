@@ -123,7 +123,7 @@ func GetPackageInfo(pkgId utils.ID) (SstPackageInfo, error) {
 	// Read the status of currently active perf-profile
 	if info.PPSupported {
 		if rsp, err = sendMboxCmd(cpu, CONFIG_TDP, CONFIG_TDP_GET_TDP_CONTROL, uint32(info.PPCurrentLevel)); err != nil {
-			return info, fmt.Errorf("failed to read SST CP status: %v", err)
+			return info, fmt.Errorf("failed to read SST BF/TF status: %v", err)
 		}
 
 		info.BFSupported = isBitSet(rsp, 1)
