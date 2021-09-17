@@ -1,6 +1,6 @@
 module github.com/intel/goresctrl
 
-go 1.14
+go 1.16
 
 require (
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
