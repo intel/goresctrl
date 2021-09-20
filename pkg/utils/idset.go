@@ -22,6 +22,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )
 
 const (
@@ -177,4 +179,18 @@ func (s *IDSet) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// CPUSet returns a cpuset.CPUSet corresponding to an id set.
+func (s IDSet) CPUSet() cpuset.CPUSet {
+	b := cpuset.NewBuilder()
+	for id := range s {
+		b.Add(int(id))
+	}
+	return b.Result()
+}
+
+// FromCPUSet returns an id set corresponding to a cpuset.CPUSet.
+func FromCPUSet(cset cpuset.CPUSet) IDSet {
+	return NewIDSetFromIntSlice(cset.ToSlice()...)
 }
