@@ -36,6 +36,7 @@ type subCmd func([]string) error
 
 var subCmds = map[string]subCmd{
 	"info": subCmdInfo,
+	"bf":   subCmdBF,
 }
 
 func main() {
@@ -92,4 +93,70 @@ func subCmdInfo(args []string) error {
 	} else {
 		return printPackageInfo(packageId)
 	}
+}
+
+func enableBF(pkgId ...int) error {
+	if len(pkgId) == 0 {
+		fmt.Printf("Enabling BF for all packages\n")
+	} else {
+		fmt.Printf("Enabling BF for package(s) %v\n", pkgId)
+	}
+
+	err := sst.EnableBF(pkgId...)
+	if err != nil {
+		return err
+	}
+
+	return printPackageInfo(pkgId...)
+}
+
+func disableBF(pkgId ...int) error {
+	if len(pkgId) == 0 {
+		fmt.Printf("Disabling BF for all packages\n")
+	} else {
+		fmt.Printf("Disabling BF for package(s) %v\n", pkgId)
+	}
+
+	err := sst.DisableBF(pkgId...)
+	if err != nil {
+		return err
+	}
+
+	return printPackageInfo(pkgId...)
+}
+
+func subCmdBF(args []string) error {
+	var enable, disable bool
+
+	flags := flag.NewFlagSet("bf", flag.ExitOnError)
+	flags.BoolVar(&enable, "enable", false, "enable feature")
+	flags.BoolVar(&disable, "disable", false, "disable feature")
+	addGlobalFlags(flags)
+
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	if (!enable && !disable) || (enable && disable) {
+		fmt.Printf("Please provide either -enable or -disable flag\n")
+		return nil
+	}
+
+	var err error
+
+	if enable {
+		if packageId < 0 {
+			err = enableBF()
+		} else {
+			err = enableBF(packageId)
+		}
+	} else {
+		if packageId < 0 {
+			err = disableBF()
+		} else {
+			err = disableBF(packageId)
+		}
+	}
+
+	return err
 }
