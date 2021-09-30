@@ -324,7 +324,7 @@ kubernetes:
 	mgAnnotations := map[string]string{"a_key": "a_value"}
 	mg, err := cls.CreateMonGroup(mgName, mgAnnotations)
 	if err != nil {
-		t.Errorf("creating mon group failed: %v", err)
+		t.Fatalf("creating mon group failed: %v", err)
 	}
 	if n := mg.Name(); n != mgName {
 		t.Errorf("MonGroup.Name() returned %q, expected %q", n, mgName)
