@@ -15,6 +15,6 @@ require (
 	golang.org/x/sys v0.0.0-20210903071746-97244b99971b
 	google.golang.org/protobuf v1.27.1 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
-	k8s.io/apimachinery v0.22.1
+	k8s.io/apimachinery v0.21.0
 	sigs.k8s.io/yaml v1.2.0
 )
