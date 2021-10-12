@@ -78,7 +78,7 @@ func getCPUMapping(cpu utils.ID) (utils.ID, error) {
 }
 
 // sendMboxCmd sends one mailbox command to PUNIT
-func sendMboxCmd(cpu utils.ID, cmd uint16, subCmd uint16, reqData uint32) (uint32, error) {
+func sendMboxCmd(cpu utils.ID, cmd uint16, subCmd uint16, parameter uint32, reqData uint32) (uint32, error) {
 	req := isstIfMboxCmds{
 		Cmd_count: 1,
 		Mbox_cmd: [1]isstIfMboxCmd{
@@ -86,6 +86,7 @@ func sendMboxCmd(cpu utils.ID, cmd uint16, subCmd uint16, reqData uint32) (uint3
 				Logical_cpu: uint32(cpu),
 				Command:     cmd,
 				Sub_command: subCmd,
+				Parameter:   parameter,
 				Req_data:    reqData,
 			},
 		},
