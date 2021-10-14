@@ -29,6 +29,11 @@ const (
 
 	CONFIG_CLOS        = 0xd0
 	CLOS_PM_QOS_CONFIG = 0x2
+	CLOS_PQR_ASSOC     = 0x0
+	CLOS_PM_CLOS       = 0x1
+	CLOS_STATUS        = 0x3
+
+	MBOX_CMD_WRITE_BIT = 0x8
 
 	READ_PM_CONFIG  = 0x94
 	WRITE_PM_CONFIG = 0x95
