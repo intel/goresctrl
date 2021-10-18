@@ -329,6 +329,10 @@ func enableBF(info *SstPackageInfo) error {
 
 // EnableBF enables SST-BF and sets it up properly
 func EnableBF(pkgs ...int) error {
+	if !isHWPEnabled() {
+		return fmt.Errorf("HWP is not enabled")
+	}
+
 	info, err := GetPackageInfo(pkgs...)
 	if err != nil {
 		return err

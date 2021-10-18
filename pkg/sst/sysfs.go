@@ -117,3 +117,12 @@ func setCPUScalingMin2CPUInfoMaxFreq(cpu utils.ID) error {
 func setCPUScalingMinFreq(cpu utils.ID, freq int) error {
 	return setCPUFreqValue(cpu, "scaling_min_freq", freq)
 }
+
+func isHWPEnabled() bool {
+	status, err := utils.ReadMSR(0, MSR_PM_ENABLE)
+	if err != nil {
+		return false
+	}
+
+	return (status & 0xff) != 0
+}
