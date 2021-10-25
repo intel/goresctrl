@@ -102,17 +102,25 @@ func sendMboxCmd(cpu utils.ID, cmd uint16, subCmd uint16, parameter uint32, reqD
 }
 
 // sendMMIOCmd sends one MMIO command to PUNIT
-func sendMMIOCmd(cpu utils.ID, reg uint32) (uint32, error) {
+func sendMMIOCmd(cpu utils.ID, reg uint32, value uint32, doWrite bool) (uint32, error) {
+	var ReadWrite uint32
+
+	if doWrite {
+		ReadWrite = 1
+	}
+
 	req := isstIfIoRegs{
 		Req_count: 1,
 		Io_reg: [1]isstIfIoReg{
 			{
 				Logical_cpu: uint32(cpu),
 				Reg:         reg,
+				Value:       value,
+				Read_write:  ReadWrite,
 			},
 		},
 	}
-	sstlog.Debugf("MMIO SEND cpu: %d reg: %#x", cpu, reg)
+	sstlog.Debugf("MMIO SEND cpu: %d reg: %#x value: %#x write: %t", cpu, reg, value, doWrite)
 	if err := isstIoctl(ISST_IF_IO_CMD, uintptr(unsafe.Pointer(&req))); err != nil {
 		return 0, fmt.Errorf("MMIO command failed with %v", err)
 	}

@@ -435,7 +435,7 @@ func sendClosCmd(cpu utils.ID, subCmd uint16, parameter uint32, reqData uint32) 
 		return 0, nil
 	}
 
-	return sendMMIOCmd(cpu, (id << 2) + offset, isBitSet(parameter, MBOX_CMD_WRITE_BIT))
+	return sendMMIOCmd(cpu, (id<<2)+offset, reqData, isBitSet(parameter, MBOX_CMD_WRITE_BIT))
 }
 
 func saveClos(closInfo *SstClosInfo, cpu utils.ID, clos int) error {
