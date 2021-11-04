@@ -1,0 +1,25 @@
+options:
+  l2:
+    optional: true
+  l3:
+    optional: true
+  mb:
+    optional: true
+partitions:
+  default:
+    l2Allocation: "100%"
+    l3Allocation: "100%"
+    mbAllocation: ["100%", "4000000000MBps"]
+    classes:
+      Guaranteed:
+        l3Allocation: "100%"
+        l2Allocation: "100%"
+        mbAllocation: ["100%", "4000000000MBps"]
+      Burstable:
+        l3Allocation: "60%"
+        l2Allocation: "60%"
+        mbAllocation: ["60%", "10000MBps"]
+      Besteffort:
+        l3Allocation: "30%"
+        l2Allocation: "30%"
+        mbAllocation: ["30%", "4000MBps"]
