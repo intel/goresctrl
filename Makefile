@@ -9,7 +9,7 @@ all: test
 verify: gofmt-verify ci-lint
 
 gofmt-verify:
-	@out=`gofmt -l -d $$(find . -name '*.go')`; \
+	@out=`gofmt -w -l -d $$(find . -name '*.go')`; \
 	if [ -n "$$out" ]; then \
 	    echo "$$out"; \
 	    exit 1; \
