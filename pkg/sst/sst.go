@@ -618,17 +618,26 @@ func ClosSetup(info *SstPackageInfo, clos int, closInfo *SstClosInfo) error {
 	return saveClos(&info.ClosInfo[clos], info.pkg.cpus[0], clos)
 }
 
-// resetCPConfig will bring the system to a known state. This means that all
+// ResetCPConfig will bring the system to a known state. This means that all
 // CLOS groups are reset to their default values, all package cores are assigned to
 // CLOS group 0 and ordered priority mode is enabled.
-func resetCPConfig(info *SstPackageInfo) error {
-	for _, cpu := range info.pkg.cpus {
-		if err := setDefaultClosParam(info, cpu); err != nil {
-			return err
-		}
+func ResetCPConfig() error {
+	infomap, err := GetPackageInfo()
+	if err != nil {
+		return err
+	}
 
-		if err := associate2Clos(cpu, 0); err != nil {
-			return fmt.Errorf("failed to associate cpu %d to clos %d: %v", cpu, 0, err)
+	for _, info := range infomap {
+		for _, cpu := range info.pkg.cpus {
+			if info.pkg.cpus[0] == cpu {
+				if err := setDefaultClosParam(info, cpu); err != nil {
+					return err
+				}
+			}
+
+			if err := associate2Clos(cpu, 0); err != nil {
+				return fmt.Errorf("failed to associate cpu %d to clos %d: %w", cpu, 0, err)
+			}
 		}
 	}
 
