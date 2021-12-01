@@ -65,7 +65,18 @@ func main() {
 }
 
 func addGlobalFlags(flagset *flag.FlagSet) {
-	flagset.IntVar(&packageId, "package", 0, "physical package id")
+	flagset.IntVar(&packageId, "package", -1, "physical package id")
+}
+
+func printPackageInfo(pkgId ...int) error {
+	info, err := sst.GetPackageInfo(pkgId...)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(utils.DumpJSON(info))
+
+	return nil
 }
 
 func subCmdInfo(args []string) error {
@@ -76,11 +87,9 @@ func subCmdInfo(args []string) error {
 		return err
 	}
 
-	// Run sub-command
-	info, err := sst.GetPackageInfo(packageId)
-	if err != nil {
-		return err
+	if packageId < 0 {
+		return printPackageInfo()
+	} else {
+		return printPackageInfo(packageId)
 	}
-	fmt.Println(utils.DumpJSON(info))
-	return nil
 }
