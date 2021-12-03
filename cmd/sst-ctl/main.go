@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/intel/goresctrl/pkg/sst"
@@ -29,7 +30,7 @@ import (
 
 var (
 	// Global command line flags
-	packageId int
+	packageIds string
 )
 
 type subCmd func([]string) error
@@ -66,7 +67,7 @@ func main() {
 }
 
 func addGlobalFlags(flagset *flag.FlagSet) {
-	flagset.IntVar(&packageId, "package", -1, "physical package id")
+	flagset.StringVar(&packageIds, "package", "", "One or more physical package id")
 }
 
 func printPackageInfo(pkgId ...int) error {
@@ -80,6 +81,26 @@ func printPackageInfo(pkgId ...int) error {
 	return nil
 }
 
+func str2slice(str string) []int {
+	var s []int
+
+	for _, str := range strings.Split(str, ",") {
+		if str == "" {
+			continue
+		}
+
+		id, err := strconv.ParseUint(str, 10, 0)
+		if err != nil {
+			fmt.Printf("invalid value '%s': %v", str, err)
+			continue
+		}
+
+		s = append(s, int(id))
+	}
+
+	return s
+}
+
 func subCmdInfo(args []string) error {
 	// Parse command line args
 	flags := flag.NewFlagSet("info", flag.ExitOnError)
@@ -88,11 +109,7 @@ func subCmdInfo(args []string) error {
 		return err
 	}
 
-	if packageId < 0 {
-		return printPackageInfo()
-	} else {
-		return printPackageInfo(packageId)
-	}
+	return printPackageInfo(str2slice(packageIds)...)
 }
 
 func enableBF(pkgId ...int) error {
@@ -144,18 +161,12 @@ func subCmdBF(args []string) error {
 
 	var err error
 
+	pkgs := str2slice(packageIds)
+
 	if enable {
-		if packageId < 0 {
-			err = enableBF()
-		} else {
-			err = enableBF(packageId)
-		}
+		err = enableBF(pkgs...)
 	} else {
-		if packageId < 0 {
-			err = disableBF()
-		} else {
-			err = disableBF(packageId)
-		}
+		err = disableBF(pkgs...)
 	}
 
 	return err
