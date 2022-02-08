@@ -28,6 +28,9 @@ import (
 // SstPackageInfo contains status of Intel Speed Select Technologies (SST)
 // for one CPU package
 type SstPackageInfo struct {
+	// Package related to this SST info
+	pkg *cpuPackageInfo
+
 	// Gereric PP info
 	PPSupported    bool
 	PPLocked       bool
@@ -86,23 +89,56 @@ func SstSupported() bool {
 	return true
 }
 
-// GetPackageInfo returns information of the SST configuration of one cpu
-// package.
-func GetPackageInfo(pkgId utils.ID) (SstPackageInfo, error) {
-	info := SstPackageInfo{}
+// GetPackageInfo returns information of those packages given as a parameter
+// or all if none given.
+func GetPackageInfo(pkgs ...int) (map[int]*SstPackageInfo, error) {
+	var numPkgs int
+	var pkglist []int
 
 	// Get topology information from sysfs
 	packages, err := getOnlineCpuPackages()
 	if err != nil {
-		return info, fmt.Errorf("failed to determine cpu topology: %w", err)
+		return nil, fmt.Errorf("failed to determine cpu topology: %w", err)
 	}
-	pkg, ok := packages[pkgId]
-	if !ok {
-		return info, fmt.Errorf("cpu package %d not present", pkgId)
+
+	if len(pkgs) == 0 {
+		for i := range packages {
+			pkglist = append(pkglist, i)
+		}
+	} else {
+		for _, i := range pkgs {
+			if _, ok := packages[i]; !ok {
+				return nil, fmt.Errorf("cpu package %d not present", i)
+			} else {
+				pkglist = append(pkglist, i)
+			}
+		}
 	}
+
+	numPkgs = len(pkglist)
+	infomap := make(map[int]*SstPackageInfo, numPkgs)
+
+	for _, i := range pkglist {
+		info, err := getSinglePackageInfo(packages[i])
+		if err != nil {
+			return nil, err
+		}
+
+		infomap[i] = &info
+	}
+
+	return infomap, nil
+}
+
+// getSinglePackageInfo returns information of the SST configuration of one cpu
+// package.
+func getSinglePackageInfo(pkg *cpuPackageInfo) (SstPackageInfo, error) {
+	info := SstPackageInfo{}
+
 	cpu := pkg.cpus[0] // We just need to pass one logical cpu from the pkg as an arg
 
 	var rsp uint32
+	var err error
 
 	// Read perf-profile feature info
 	if rsp, err = sendMboxCmd(cpu, CONFIG_TDP, CONFIG_TDP_GET_LEVELS_INFO, 0); err != nil {
@@ -113,6 +149,7 @@ func GetPackageInfo(pkgId utils.ID) (SstPackageInfo, error) {
 	info.PPCurrentLevel = int(getBits(rsp, 16, 23))
 	info.PPMaxLevel = int(getBits(rsp, 8, 15))
 	info.PPVersion = int(getBits(rsp, 0, 7))
+	info.pkg = pkg
 
 	// Forget about older hw with partial/convoluted support
 	if info.PPVersion < 3 {
@@ -233,4 +270,128 @@ func getBits(val, i, j uint32) uint32 {
 
 func isBitSet(val, n uint32) bool {
 	return val&(1<<n) != 0
+}
+
+func setBit(val, n uint32) uint32 {
+	return val | (1 << n)
+}
+
+func clearBit(val, n uint32) uint32 {
+	return val &^ (1 << n)
+}
+
+func setBFStatus(info *SstPackageInfo, status bool) error {
+	rsp, err := sendMboxCmd(info.pkg.cpus[0], CONFIG_TDP, CONFIG_TDP_GET_TDP_CONTROL, uint32(info.PPCurrentLevel))
+	if err != nil {
+		return fmt.Errorf("failed to read SST status: %w", err)
+	}
+
+	req := clearBit(rsp, 17)
+	if status {
+		req = setBit(rsp, 17)
+	}
+
+	if _, err = sendMboxCmd(info.pkg.cpus[0], CONFIG_TDP, CONFIG_TDP_SET_TDP_CONTROL, req); err != nil {
+		return fmt.Errorf("failed to enable SST %s: %w", "BF", err)
+	}
+
+	info.BFEnabled = status
+
+	return nil
+}
+
+func setScalingMin2CPUInfoMax(info *SstPackageInfo) error {
+	for _, cpu := range info.pkg.cpus {
+		err := setCPUScalingMin2CPUInfoMaxFreq(cpu)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func enableBF(info *SstPackageInfo) error {
+	if !info.BFSupported {
+		return fmt.Errorf("SST BF not supported")
+	}
+
+	if err := setBFStatus(info, true); err != nil {
+		return err
+	}
+
+	if err := setScalingMin2CPUInfoMax(info); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// EnableBF enables SST-BF and sets it up properly
+func EnableBF(pkgs ...int) error {
+	if !isHWPEnabled() {
+		return fmt.Errorf("HWP is not enabled")
+	}
+
+	info, err := GetPackageInfo(pkgs...)
+	if err != nil {
+		return err
+	}
+
+	for _, i := range info {
+		err = enableBF(i)
+		if err != nil {
+			// Ignore but log error as there might be packages in the
+			// user supplied list that do not exists
+			sstlog.Errorf("sst-bf : %w", err)
+		}
+	}
+
+	return nil
+}
+
+func setScalingMin2CPUInfoMin(info *SstPackageInfo) error {
+	for _, cpu := range info.pkg.cpus {
+		err := setCPUScalingMin2CPUInfoMinFreq(cpu)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func disableBF(info *SstPackageInfo) error {
+	if !info.BFSupported {
+		return fmt.Errorf("SST BF not supported")
+	}
+
+	if err := setBFStatus(info, false); err != nil {
+		return err
+	}
+
+	if err := setScalingMin2CPUInfoMin(info); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// DisableBF disables SST-BF and clears things properly
+func DisableBF(pkgs ...int) error {
+	info, err := GetPackageInfo(pkgs...)
+	if err != nil {
+		return err
+	}
+
+	for _, i := range info {
+		err = disableBF(i)
+		if err != nil {
+			// Ignore but log error as there might be packages in the
+			// user supplied list that do not exists
+			sstlog.Errorf("sst-bf : %w", err)
+		}
+	}
+
+	return nil
 }

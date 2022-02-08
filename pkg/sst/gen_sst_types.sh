@@ -24,4 +24,4 @@ echo "INFO: using kernel sources at $KERNEL_SRC_DIR"
 generate sst_types_amd64.go -I"$KERNEL_SRC_DIR/include/uapi" "-I$KERNEL_SRC_DIR/include"
 
 # Generate types from Linux kernel private headers
-generate sst_types_priv.go -I"$KERNEL_SRC_DIR"
+generate sst_types_priv.go -I"$KERNEL_SRC_DIR" "-I$KERNEL_SRC_DIR/include -I$KERNEL_SRC_DIR/arch/x86/include/generated/"

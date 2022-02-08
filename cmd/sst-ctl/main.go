@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/intel/goresctrl/pkg/sst"
@@ -29,13 +30,14 @@ import (
 
 var (
 	// Global command line flags
-	packageId int
+	packageIds string
 )
 
 type subCmd func([]string) error
 
 var subCmds = map[string]subCmd{
 	"info": subCmdInfo,
+	"bf":   subCmdBF,
 }
 
 func main() {
@@ -65,7 +67,38 @@ func main() {
 }
 
 func addGlobalFlags(flagset *flag.FlagSet) {
-	flagset.IntVar(&packageId, "package", 0, "physical package id")
+	flagset.StringVar(&packageIds, "package", "", "One or more physical package id")
+}
+
+func printPackageInfo(pkgId ...int) error {
+	info, err := sst.GetPackageInfo(pkgId...)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(utils.DumpJSON(info))
+
+	return nil
+}
+
+func str2slice(str string) []int {
+	var s []int
+
+	for _, str := range strings.Split(str, ",") {
+		if str == "" {
+			continue
+		}
+
+		id, err := strconv.ParseUint(str, 10, 0)
+		if err != nil {
+			fmt.Printf("invalid value '%s': %v", str, err)
+			continue
+		}
+
+		s = append(s, int(id))
+	}
+
+	return s
 }
 
 func subCmdInfo(args []string) error {
@@ -76,11 +109,65 @@ func subCmdInfo(args []string) error {
 		return err
 	}
 
-	// Run sub-command
-	info, err := sst.GetPackageInfo(packageId)
+	return printPackageInfo(str2slice(packageIds)...)
+}
+
+func enableBF(pkgId ...int) error {
+	if len(pkgId) == 0 {
+		fmt.Printf("Enabling BF for all packages\n")
+	} else {
+		fmt.Printf("Enabling BF for package(s) %v\n", pkgId)
+	}
+
+	err := sst.EnableBF(pkgId...)
 	if err != nil {
 		return err
 	}
-	fmt.Println(utils.DumpJSON(info))
-	return nil
+
+	return printPackageInfo(pkgId...)
+}
+
+func disableBF(pkgId ...int) error {
+	if len(pkgId) == 0 {
+		fmt.Printf("Disabling BF for all packages\n")
+	} else {
+		fmt.Printf("Disabling BF for package(s) %v\n", pkgId)
+	}
+
+	err := sst.DisableBF(pkgId...)
+	if err != nil {
+		return err
+	}
+
+	return printPackageInfo(pkgId...)
+}
+
+func subCmdBF(args []string) error {
+	var enable, disable bool
+
+	flags := flag.NewFlagSet("bf", flag.ExitOnError)
+	flags.BoolVar(&enable, "enable", false, "enable feature")
+	flags.BoolVar(&disable, "disable", false, "disable feature")
+	addGlobalFlags(flags)
+
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	if (!enable && !disable) || (enable && disable) {
+		fmt.Printf("Please provide either -enable or -disable flag\n")
+		return nil
+	}
+
+	var err error
+
+	pkgs := str2slice(packageIds)
+
+	if enable {
+		err = enableBF(pkgs...)
+	} else {
+		err = disableBF(pkgs...)
+	}
+
+	return err
 }
