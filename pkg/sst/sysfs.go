@@ -31,6 +31,10 @@ type cpuPackageInfo struct {
 	cpus []int
 }
 
+func (pkg *cpuPackageInfo) hasCpus(cpus utils.IDSet) bool {
+	return utils.NewIDSetFromIntSlice(pkg.cpus...).Has(cpus.Members()...)
+}
+
 func getOnlineCpuPackages() (map[int]*cpuPackageInfo, error) {
 	basePath := "/sys/bus/cpu/devices"
 

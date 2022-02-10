@@ -93,6 +93,11 @@ func SstSupported() bool {
 	return true
 }
 
+// Check that a list of CPUs belong to a given package
+func CheckPackageCpus(info *SstPackageInfo, cpus utils.IDSet) bool {
+	return info.pkg.hasCpus(cpus)
+}
+
 // GetPackageInfo returns information of those packages given as a parameter
 // or all if none given.
 func GetPackageInfo(pkgs ...int) (map[int]*SstPackageInfo, error) {
