@@ -679,6 +679,54 @@ partitions:
 		},
 		// Testcase
 		TC{
+			name: "Default L3 CAT",
+			fs:   "resctrl.full",
+			config: `
+options:
+partitions:
+  part-1:
+    mbAllocation: [100%]
+    classes:
+      class-1:
+        mbAllocation: [50%]
+`,
+			schemata: map[string]Schemata{
+				"class-1": Schemata{
+					l3: "0=fffff;1=fffff;2=fffff;3=fffff",
+					mb: "0=50;1=50;2=50;3=50",
+				},
+				"system/default": Schemata{
+					l3: "0=fffff;1=fffff;2=fffff;3=fffff",
+					mb: "0=100;1=100;2=100;3=100",
+				},
+			},
+		},
+		// Testcase
+		TC{
+			name: "Default MBA",
+			fs:   "resctrl.full",
+			config: `
+options:
+partitions:
+  part-1:
+    l3Allocation: 100%
+    classes:
+      class-1:
+        l3Allocation: 50%
+`,
+			schemata: map[string]Schemata{
+				"class-1": Schemata{
+					l3: "0=3ff;1=3ff;2=3ff;3=3ff",
+					mb: "0=100;1=100;2=100;3=100",
+				},
+				"system/default": Schemata{
+					l3: "0=fffff;1=fffff;2=fffff;3=fffff",
+					mb: "0=100;1=100;2=100;3=100",
+				},
+			},
+		},
+		// Testcase
+		TC{
 			name:        "duplicate class names (fail)",
 			fs:          "resctrl.nomb",
 			configErrRe: `"class-1" defined multiple times`,
