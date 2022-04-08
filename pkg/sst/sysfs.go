@@ -17,13 +17,13 @@ limitations under the License.
 package sst
 
 import (
-	"fmt"
-	"github.com/intel/goresctrl/pkg/utils"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/intel/goresctrl/pkg/utils"
 )
 
 type cpuPackageInfo struct {
@@ -70,54 +70,6 @@ func getOnlineCpuPackages() (map[int]*cpuPackageInfo, error) {
 	return pkgs, nil
 }
 
-func setCPUFreqValue(cpu utils.ID, setting string, value int) error {
-	str := fmt.Sprintf("/sys/devices/system/cpu/cpu%d/cpufreq/%s", cpu, setting)
-
-	if err := ioutil.WriteFile(str, []byte(strconv.Itoa(value)), 0644); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func getCPUFreqValue(cpu utils.ID, setting string) (int, error) {
-	str := fmt.Sprintf("/sys/devices/system/cpu/cpu%d/cpufreq/%s", cpu, setting)
-
-	raw, err := ioutil.ReadFile(str)
-	if err != nil {
-		return 0, err
-	}
-
-	value, err := strconv.Atoi(strings.TrimSpace(string(raw)))
-	if err != nil {
-		return 0, err
-	}
-
-	return value, nil
-}
-
-func setCPUScalingMin2CPUInfoMinFreq(cpu utils.ID) error {
-	freq, err := getCPUFreqValue(cpu, "cpuinfo_min_freq")
-	if err != nil {
-		return err
-	}
-
-	return setCPUScalingMinFreq(cpu, freq)
-}
-
-func setCPUScalingMin2CPUInfoMaxFreq(cpu utils.ID) error {
-	freq, err := getCPUFreqValue(cpu, "cpuinfo_max_freq")
-	if err != nil {
-		return err
-	}
-
-	return setCPUScalingMinFreq(cpu, freq)
-}
-
-func setCPUScalingMinFreq(cpu utils.ID, freq int) error {
-	return setCPUFreqValue(cpu, "scaling_min_freq", freq)
-}
-
 func isHWPEnabled() bool {
 	status, err := utils.ReadMSR(0, MSR_PM_ENABLE)
 	if err != nil {
@@ -125,4 +77,22 @@ func isHWPEnabled() bool {
 	}
 
 	return (status & 0xff) != 0
+}
+
+func setCPUScalingMin2CPUInfoMinFreq(cpu utils.ID) error {
+	freq, err := utils.GetCPUFreqValue(cpu, "cpuinfo_min_freq")
+	if err != nil {
+		return err
+	}
+
+	return utils.SetCPUScalingMinFreq(cpu, freq)
+}
+
+func setCPUScalingMin2CPUInfoMaxFreq(cpu utils.ID) error {
+	freq, err := utils.GetCPUFreqValue(cpu, "cpuinfo_max_freq")
+	if err != nil {
+		return err
+	}
+
+	return utils.SetCPUScalingMinFreq(cpu, freq)
 }
