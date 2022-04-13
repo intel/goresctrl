@@ -62,7 +62,7 @@ func SetCPUScalingMaxFreq(cpu ID, freq int) error {
 
 // SetCPUsScalingMinFreq sets the scaling_min_freq value of a given set of CPUs
 func SetCPUsScalingMinFreq(cpus []ID, freq int) error {
-	for cpu := range cpus {
+	for _, cpu := range cpus {
 		if err := SetCPUScalingMinFreq(cpu, freq); err != nil {
 			return err
 		}
@@ -73,7 +73,7 @@ func SetCPUsScalingMinFreq(cpus []ID, freq int) error {
 
 // SetCPUsScalingMaxFreq sets the scaling_max_freq value of a given set of CPUs
 func SetCPUsScalingMaxFreq(cpus []ID, freq int) error {
-	for cpu := range cpus {
+	for _, cpu := range cpus {
 		if err := SetCPUScalingMaxFreq(cpu, freq); err != nil {
 			return err
 		}
