@@ -554,6 +554,10 @@ func (c *Config) resolvePartitions() (partitionSet, error) {
 
 // resolveCatPartitions tries to resolve requested cache allocations between partitions
 func (c *Config) resolveCatPartitions(lvl cacheLevel, conf partitionSet) error {
+	if len(c.Partitions) == 0 {
+		return nil
+	}
+
 	// Resolve partitions in sorted order for reproducibility
 	names := make([]string, 0, len(c.Partitions))
 	for name := range c.Partitions {
