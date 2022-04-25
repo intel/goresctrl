@@ -475,6 +475,18 @@ func TestConfig(t *testing.T) {
 	tcs := []TC{
 		// Testcase
 		TC{
+			name:   "Empty config",
+			fs:     "resctrl.full",
+			config: "",
+			schemata: map[string]Schemata{
+				"system/default": Schemata{
+					l3: "0=fffff;1=fffff;2=fffff;3=fffff",
+					mb: "0=100;1=100;2=100;3=100",
+				},
+			},
+		},
+		// Testcase
+		TC{
 			name: "Complex config",
 			fs:   "resctrl.full",
 			config: `
