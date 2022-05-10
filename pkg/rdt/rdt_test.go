@@ -224,7 +224,7 @@ kubernetes:
 	cls, _ := GetClass(RootClassName)
 	verifyGroupNames(cls.GetMonGroups(), []string{})
 	cls, _ = GetClass("Guaranteed")
-	verifyGroupNames(cls.GetMonGroups(), []string{"predefined_group_live"})
+	verifyGroupNames(cls.GetMonGroups(), []string{"predefined_group_empty", "predefined_group_live"})
 	cls, _ = GetClass("Stale")
 	if err := cls.AddPids("99"); err != nil {
 		t.Fatalf("AddPids() failed: %v", err)
@@ -253,6 +253,10 @@ kubernetes:
 	if !rdt.conf.Classes["BestEffort"].Kubernetes.DenyPodAnnotation {
 		t.Fatal("DenyPodAnnotation of class BestEffort should be 'true'")
 	}
+
+	// Empty mon group(s) should be pruned after configuration
+	cls, _ = GetClass("Guaranteed")
+	verifyGroupNames(cls.GetMonGroups(), []string{"predefined_group_live"})
 
 	// Check that SetLogger() takes effect in the control interface, too
 	l := grclog.NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt-test-2 ] ", 0))
