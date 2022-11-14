@@ -269,7 +269,7 @@ allocation for code and data paths.
 ```
 
 In addition, if the hardware details are known, raw bitmasks or bit numbers
-(`0x1f` or '0-4`) can be used instead of percentages in order to be able to
+(`0x1f` or `0-4`) can be used instead of percentages in order to be able to
 configure cache allocations exactly as required. The bits in this case
 correspond to those in /sys/fs/resctrl/ bitmasks. You can also mix relative
 (percentage) and absolute (bitmask) allocations. For cases where the resctrl
