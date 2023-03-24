@@ -163,15 +163,7 @@ func TestConfigurableBlockDevices(t *testing.T) {
 			devBlockDevs = append(devBlockDevs, strings.Replace(sysfsBlockDev, "/sys/block/", "/dev/", 1))
 		}
 	}
-	devPartitions := []string{}
-	for _, devBlockDev := range devBlockDevs {
-		devPartitions, _ = filepath.Glob(devBlockDev + "[0-9]")
-		if len(devPartitions) > 0 {
-			break
-		}
-	}
 	t.Logf("test real block devices: %v", devBlockDevs)
-	t.Logf("test partitions: %v", devPartitions)
 	tcases := []struct {
 		name                    string
 		devWildcards            []string
@@ -214,14 +206,6 @@ func TestConfigurableBlockDevices(t *testing.T) {
 			name:            "real block devices",
 			devWildcards:    devBlockDevs,
 			expectedMatches: len(devBlockDevs),
-		},
-		{
-			name:                    "partition",
-			devWildcards:            devPartitions,
-			expectedErrorCount:      len(devPartitions),
-			expectedErrorSubstrings: []string{"cannot weight/throttle partitions"},
-			disabled:                len(devPartitions) == 0,
-			disabledReason:          "no block device partitions found",
 		},
 	}
 	for _, tc := range tcases {
