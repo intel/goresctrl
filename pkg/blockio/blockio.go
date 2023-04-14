@@ -441,10 +441,6 @@ func (dpm defaultPlatform) configurableBlockDevices(devWildcards []string) ([]tB
 			errors = multierror.Append(errors, fmt.Errorf("cannot get syscall stat_t from %#v: %w%s", devRealpath, err, origin))
 			continue
 		}
-		if minor&0xf != 0 {
-			errors = multierror.Append(errors, fmt.Errorf("skipping %#v: cannot weight/throttle partitions%s", devRealpath, origin))
-			continue
-		}
 		blockDevices = append(blockDevices, tBlockDeviceInfo{
 			Major:   int64(major),
 			Minor:   int64(minor),
