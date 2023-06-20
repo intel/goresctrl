@@ -119,6 +119,7 @@ import (
 
 	"github.com/intel/goresctrl/pkg/cgroups"
 	grclog "github.com/intel/goresctrl/pkg/log"
+	goresctrlpath "github.com/intel/goresctrl/pkg/path"
 )
 
 const (
@@ -240,9 +241,10 @@ func SetCgroupClass(group string, class string) error {
 // Returns schedulers in a map: {"/dev/sda": "bfq"}
 func getCurrentIOSchedulers() (map[string]string, error) {
 	var ios = map[string]string{}
-	schedulerFiles, err := filepath.Glob(sysfsBlockDeviceIOSchedulerPaths)
+	glob := goresctrlpath.Path(sysfsBlockDeviceIOSchedulerPaths)
+	schedulerFiles, err := filepath.Glob(glob)
 	if err != nil {
-		return ios, fmt.Errorf("error in I/O scheduler wildcards %#v: %w", sysfsBlockDeviceIOSchedulerPaths, err)
+		return ios, fmt.Errorf("error in I/O scheduler wildcards %#v: %w", glob, err)
 	}
 	for _, schedulerFile := range schedulerFiles {
 		devName := strings.SplitN(schedulerFile, "/", 5)[3]
