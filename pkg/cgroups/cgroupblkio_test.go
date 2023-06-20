@@ -23,6 +23,8 @@ import (
 	"github.com/intel/goresctrl/pkg/testutils"
 )
 
+var mountDir = "/sys/fs/cgroup"
+
 func TestUpdateAppend(t *testing.T) {
 	tcases := []struct {
 		name                    string

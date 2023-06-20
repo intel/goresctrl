@@ -25,6 +25,7 @@ import (
 	"os"
 
 	"github.com/intel/goresctrl/pkg/blockio"
+	goresctrlpath "github.com/intel/goresctrl/pkg/path"
 )
 
 var examples string = `Examples:
@@ -47,7 +48,7 @@ func usage() {
 	fmt.Fprint(flag.CommandLine.Output(), examples)
 }
 
-func error(format string, args ...interface{}) {
+func errorExit(format string, args ...interface{}) {
 	fmt.Fprintln(os.Stderr, fmt.Sprintf(format, args...))
 	os.Exit(1)
 }
@@ -55,40 +56,44 @@ func error(format string, args ...interface{}) {
 func main() {
 	// Parse commandline arguments
 	flag.Usage = usage
+	flag.Func("prefix", "set mount prefix for system directories", func(s string) error {
+		goresctrlpath.SetPrefix(s)
+		return nil
+	})
 	optConfig := flag.String("config", "", "load class configuration from FILE")
 	optClass := flag.String("class", "", "use configuration of the blockio class NAME")
 	optCgroup := flag.String("cgroup", "", "apply class to CGROUP, otherwise print it as OCI BlockIO structure")
 	flag.Parse()
 
 	if optConfig == nil || *optConfig == "" {
-		error("missing -config=FILE")
+		errorExit("missing -config=FILE")
 	}
 
 	if optClass == nil || *optClass == "" {
-		error("missing -class=NAME")
+		errorExit("missing -class=NAME")
 	}
 
 	// Read blockio class configuration.
 	if err := blockio.SetConfigFromFile(*optConfig, true); err != nil {
-		error("%v", err)
+		errorExit("%v", err)
 	}
 
 	if optCgroup == nil || *optCgroup == "" {
 		// If -cgroup=CGROUP is missing, print OCI spec.
 		oci, err := blockio.OciLinuxBlockIO(*optClass)
 		if err != nil {
-			error("%v", err)
+			errorExit("%v", err)
 		}
 		ociBytes, err := json.Marshal(oci)
 		if err != nil {
-			error("%v", err)
+			errorExit("%v", err)
 		}
 		fmt.Printf("%s\n", ociBytes)
 	} else {
 		// If -cgroup=CGROUP is given, apply class configuration to it.
 		err := blockio.SetCgroupClass(*optCgroup, *optClass)
 		if err != nil {
-			error("%v", err)
+			errorExit("%v", err)
 		}
 		fmt.Printf("cgroup %s configured to blockio class %q\n", *optCgroup, *optClass)
 	}

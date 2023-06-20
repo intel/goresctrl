@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 
+	goresctrlpath "github.com/intel/goresctrl/pkg/path"
 	"github.com/intel/goresctrl/pkg/sst"
 	"github.com/intel/goresctrl/pkg/utils"
 )
@@ -69,6 +70,10 @@ func main() {
 
 func addGlobalFlags(flagset *flag.FlagSet) {
 	flagset.StringVar(&packageIds, "package", "", "One or more physical package id")
+	flagset.Func("prefix", "set mount prefix for system directories", func(s string) error {
+		goresctrlpath.SetPrefix(s)
+		return nil
+	})
 }
 
 func printPackageInfo(pkgId ...int) error {

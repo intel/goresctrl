@@ -45,9 +45,10 @@ func punitCPU(cpu utils.ID) (utils.ID, error) {
 
 // isstIoctl is a helper for executing ioctls on the linux isst_if device driver
 func isstIoctl(ioctl uintptr, req uintptr) error {
-	f, err := os.Open(isstDevPath)
+	devPath := isstDevPath()
+	f, err := os.Open(devPath)
 	if err != nil {
-		return fmt.Errorf("failed to open isst device %q: %v", isstDevPath, err)
+		return fmt.Errorf("failed to open isst device %q: %v", devPath, err)
 	}
 	defer f.Close()
 
