@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 
+	goresctrlpath "github.com/intel/goresctrl/pkg/path"
 	"github.com/intel/goresctrl/pkg/utils"
 )
 
@@ -36,7 +37,7 @@ func (pkg *cpuPackageInfo) hasCpus(cpus utils.IDSet) bool {
 }
 
 func getOnlineCpuPackages() (map[int]*cpuPackageInfo, error) {
-	basePath := "/sys/bus/cpu/devices"
+	basePath := goresctrlpath.Path("sys/bus/cpu/devices")
 
 	files, err := ioutil.ReadDir(basePath)
 	if err != nil {

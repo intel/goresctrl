@@ -22,6 +22,7 @@ import (
 	"os"
 
 	grclog "github.com/intel/goresctrl/pkg/log"
+	goresctrlpath "github.com/intel/goresctrl/pkg/path"
 	"github.com/intel/goresctrl/pkg/utils"
 )
 
@@ -75,18 +76,19 @@ const (
 // ClosCPUSet contains mapping from Clos id to a set of CPU ids
 type ClosCPUSet map[int]utils.IDSet
 
-const isstDevPath = "/dev/isst_interface"
-
 var sstlog grclog.Logger = grclog.NewLoggerWrapper(stdlog.New(os.Stderr, "[ sst ] ", 0))
+
+func isstDevPath() string { return goresctrlpath.Path("dev/isst_interface") }
 
 // SstSupported returns true if Intel Speed Select Technologies (SST) is supported
 // by the system and can be interfaced via the Linux kernel device
 func SstSupported() bool {
-	if _, err := os.Stat(isstDevPath); err != nil {
+	devPath := isstDevPath()
+	if _, err := os.Stat(devPath); err != nil {
 		if !os.IsNotExist(err) {
-			sstlog.Warnf("failed to access sst device %q: %v", isstDevPath, err)
+			sstlog.Warnf("failed to access sst device %q: %v", devPath, err)
 		} else {
-			sstlog.Debugf("sst device %q does not exist", isstDevPath)
+			sstlog.Debugf("sst device %q does not exist", devPath)
 		}
 		return false
 	}
