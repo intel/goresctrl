@@ -102,7 +102,6 @@ package blockio
 
 import (
 	"fmt"
-	"io/ioutil"
 	stdlog "log"
 	"os"
 	"path/filepath"
@@ -162,7 +161,7 @@ func SetLogger(l grclog.Logger) {
 // SetConfigFromFile reads and applies blockio configuration from the
 // filesystem.
 func SetConfigFromFile(filename string, force bool) error {
-	if data, err := ioutil.ReadFile(filename); err == nil {
+	if data, err := os.ReadFile(filename); err == nil {
 		if err = SetConfigFromData(data, force); err != nil {
 			return fmt.Errorf("failed to set configuration from file %q: %s", filename, err)
 		}
@@ -248,7 +247,7 @@ func getCurrentIOSchedulers() (map[string]string, error) {
 	}
 	for _, schedulerFile := range schedulerFiles {
 		devName := strings.SplitN(schedulerFile, "/", 5)[3]
-		schedulerDataB, err := ioutil.ReadFile(schedulerFile)
+		schedulerDataB, err := os.ReadFile(schedulerFile)
 		if err != nil {
 			// A block device may be disconnected.
 			log.Errorf("failed to read current I/O scheduler %#v: %v\n", schedulerFile, err)
