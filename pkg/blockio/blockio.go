@@ -101,6 +101,7 @@ limitations under the License.
 package blockio
 
 import (
+	"errors"
 	"fmt"
 	stdlog "log"
 	"os"
@@ -113,8 +114,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/yaml"
-
-	"github.com/hashicorp/go-multierror"
 
 	"github.com/intel/goresctrl/pkg/cgroups"
 	grclog "github.com/intel/goresctrl/pkg/log"
@@ -276,27 +275,27 @@ func getCurrentIOSchedulers() (map[string]string, error) {
 
 // deviceParametersToCgBlockIO converts single blockio class parameters into cgroups blkio format.
 func devicesParametersToCgBlockIO(dps []DevicesParameters, currentIOSchedulers map[string]string) (cgroups.BlockIOParameters, error) {
-	var errors *multierror.Error
+	errs := []error{}
 	blkio := cgroups.NewBlockIOParameters()
 	for _, dp := range dps {
 		var err error
 		var weight, throttleReadBps, throttleWriteBps, throttleReadIOPS, throttleWriteIOPS int64
 		weight, err = parseAndValidateQuantity("Weight", dp.Weight, -1, 10, 1000)
-		errors = multierror.Append(errors, err)
+		errs = append(errs, err)
 		throttleReadBps, err = parseAndValidateQuantity("ThrottleReadBps", dp.ThrottleReadBps, -1, 0, -1)
-		errors = multierror.Append(errors, err)
+		errs = append(errs, err)
 		throttleWriteBps, err = parseAndValidateQuantity("ThrottleWriteBps", dp.ThrottleWriteBps, -1, 0, -1)
-		errors = multierror.Append(errors, err)
+		errs = append(errs, err)
 		throttleReadIOPS, err = parseAndValidateQuantity("ThrottleReadIOPS", dp.ThrottleReadIOPS, -1, 0, -1)
-		errors = multierror.Append(errors, err)
+		errs = append(errs, err)
 		throttleWriteIOPS, err = parseAndValidateQuantity("ThrottleWriteIOPS", dp.ThrottleWriteIOPS, -1, 0, -1)
-		errors = multierror.Append(errors, err)
+		errs = append(errs, err)
 		if dp.Devices == nil {
 			if weight > -1 {
 				blkio.Weight = weight
 			}
 			if throttleReadBps > -1 || throttleWriteBps > -1 || throttleReadIOPS > -1 || throttleWriteIOPS > -1 {
-				errors = multierror.Append(errors, fmt.Errorf("ignoring throttling (rbps=%#v wbps=%#v riops=%#v wiops=%#v): Devices not listed",
+				errs = append(errs, fmt.Errorf("ignoring throttling (rbps=%#v wbps=%#v riops=%#v wiops=%#v): Devices not listed",
 					dp.ThrottleReadBps, dp.ThrottleWriteBps, dp.ThrottleReadIOPS, dp.ThrottleWriteIOPS))
 			}
 		} else {
@@ -334,7 +333,7 @@ func devicesParametersToCgBlockIO(dps []DevicesParameters, currentIOSchedulers m
 			}
 		}
 	}
-	return blkio, errors.ErrorOrNil()
+	return blkio, errors.Join(errs...)
 }
 
 // parseAndValidateQuantity parses quantities, like "64 M", and validates that they are in given range.
@@ -373,7 +372,7 @@ var currentPlatform platformInterface = defaultPlatform{}
 func (dpm defaultPlatform) configurableBlockDevices(devWildcards []string) ([]tBlockDeviceInfo, error) {
 	// Return map {devNode: tBlockDeviceInfo}
 	// Example: {"/dev/sda": {Major:8, Minor:0, Origin:"from symlink /dev/disk/by-id/ata-VendorXSSD from wildcard /dev/disk/by-id/*SSD*"}}
-	var errors *multierror.Error
+	errs := []error{}
 	blockDevices := []tBlockDeviceInfo{}
 	var origin string
 
@@ -383,11 +382,11 @@ func (dpm defaultPlatform) configurableBlockDevices(devWildcards []string) ([]tB
 	for _, devWildcard := range devWildcards {
 		devWildcardMatches, err := filepath.Glob(devWildcard)
 		if err != nil {
-			errors = multierror.Append(errors, fmt.Errorf("bad device wildcard %#v: %w", devWildcard, err))
+			errs = append(errs, fmt.Errorf("bad device wildcard %#v: %w", devWildcard, err))
 			continue
 		}
 		if len(devWildcardMatches) == 0 {
-			errors = multierror.Append(errors, fmt.Errorf("device wildcard %#v does not match any device nodes", devWildcard))
+			errs = append(errs, fmt.Errorf("device wildcard %#v does not match any device nodes", devWildcard))
 			continue
 		}
 		for _, devMatch := range devWildcardMatches {
@@ -406,7 +405,7 @@ func (dpm defaultPlatform) configurableBlockDevices(devWildcards []string) ([]tB
 	for devMatch, devOrigin := range devMatches {
 		realDevNode, err := filepath.EvalSymlinks(devMatch)
 		if err != nil {
-			errors = multierror.Append(errors, fmt.Errorf("cannot filepath.EvalSymlinks(%#v): %w", devMatch, err))
+			errs = append(errs, fmt.Errorf("cannot filepath.EvalSymlinks(%#v): %w", devMatch, err))
 			continue
 		}
 		if realDevNode != devMatch {
@@ -426,23 +425,23 @@ func (dpm defaultPlatform) configurableBlockDevices(devWildcards []string) ([]tB
 		}
 		fileInfo, err := os.Stat(devRealpath)
 		if err != nil {
-			errors = multierror.Append(errors, fmt.Errorf("cannot os.Stat(%#v): %w%s", devRealpath, err, origin))
+			errs = append(errs, fmt.Errorf("cannot os.Stat(%#v): %w%s", devRealpath, err, origin))
 			continue
 		}
 		fileMode := fileInfo.Mode()
 		if fileMode&os.ModeDevice == 0 {
-			errors = multierror.Append(errors, fmt.Errorf("file %#v is not a device%s", devRealpath, origin))
+			errs = append(errs, fmt.Errorf("file %#v is not a device%s", devRealpath, origin))
 			continue
 		}
 		if fileMode&os.ModeCharDevice != 0 {
-			errors = multierror.Append(errors, fmt.Errorf("file %#v is a character device%s", devRealpath, origin))
+			errs = append(errs, fmt.Errorf("file %#v is a character device%s", devRealpath, origin))
 			continue
 		}
 		sys, ok := fileInfo.Sys().(*syscall.Stat_t)
 		major := unix.Major(uint64(sys.Rdev))
 		minor := unix.Minor(uint64(sys.Rdev))
 		if !ok {
-			errors = multierror.Append(errors, fmt.Errorf("cannot get syscall stat_t from %#v: %w%s", devRealpath, err, origin))
+			errs = append(errs, fmt.Errorf("cannot get syscall stat_t from %#v: %w%s", devRealpath, err, origin))
 			continue
 		}
 		blockDevices = append(blockDevices, tBlockDeviceInfo{
@@ -452,5 +451,5 @@ func (dpm defaultPlatform) configurableBlockDevices(devWildcards []string) ([]tB
 			Origin:  devOrigin,
 		})
 	}
-	return blockDevices, errors.ErrorOrNil()
+	return blockDevices, errors.Join(errs...)
 }

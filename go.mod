@@ -1,10 +1,9 @@
 module github.com/intel/goresctrl
 
-go 1.18
+go 1.20
 
 require (
 	github.com/google/go-cmp v0.5.9
-	github.com/hashicorp/go-multierror v1.1.1
 	github.com/opencontainers/runtime-spec v1.0.2
 	github.com/prometheus/client_golang v1.16.0
 	golang.org/x/sys v0.11.0
@@ -18,7 +17,6 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/prometheus/client_model v0.3.0 // indirect
