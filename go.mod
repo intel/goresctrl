@@ -7,8 +7,8 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/opencontainers/runtime-spec v1.0.2
 	github.com/prometheus/client_golang v1.16.0
-	golang.org/x/sys v0.9.0
-	k8s.io/apimachinery v0.27.3
+	golang.org/x/sys v0.11.0
+	k8s.io/apimachinery v0.27.4
 	sigs.k8s.io/yaml v1.3.0
 )
 
