@@ -17,7 +17,6 @@ limitations under the License.
 package sst
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -39,7 +38,7 @@ func (pkg *cpuPackageInfo) hasCpus(cpus utils.IDSet) bool {
 func getOnlineCpuPackages() (map[int]*cpuPackageInfo, error) {
 	basePath := goresctrlpath.Path("sys/bus/cpu/devices")
 
-	files, err := ioutil.ReadDir(basePath)
+	files, err := os.ReadDir(basePath)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +47,7 @@ func getOnlineCpuPackages() (map[int]*cpuPackageInfo, error) {
 
 	for _, file := range files {
 		// Try to read siblings from topology
-		raw, err := ioutil.ReadFile(filepath.Join(basePath, file.Name(), "topology/physical_package_id"))
+		raw, err := os.ReadFile(filepath.Join(basePath, file.Name(), "topology/physical_package_id"))
 		if os.IsNotExist(err) {
 			// Offline -> topology information does not exist
 			continue

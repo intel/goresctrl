@@ -15,12 +15,12 @@
 package testutils
 
 import (
-	"io/ioutil"
+	"os"
 	"testing"
 )
 
 func CreateTempFile(t *testing.T, data string) string {
-	f, err := ioutil.TempFile("", "goresctrl-testutils-")
+	f, err := os.CreateTemp("", "goresctrl-testutils-")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -17,7 +17,6 @@ limitations under the License.
 package rdt
 
 import (
-	"io/ioutil"
 	stdlog "log"
 	"os"
 	"os/exec"
@@ -51,7 +50,7 @@ func newMockResctrlFs(t *testing.T, name, mountOpts string) (*mockResctrlFs, err
 	m := &mockResctrlFs{t: t}
 
 	m.origDir = testdata.Path(name)
-	m.baseDir, err = ioutil.TempDir("", "goresctrl.test.")
+	m.baseDir, err = os.MkdirTemp("", "goresctrl.test.")
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +62,7 @@ func newMockResctrlFs(t *testing.T, name, mountOpts string) (*mockResctrlFs, err
 	mountInfoPath = filepath.Join(m.baseDir, "mounts")
 	resctrlPath := filepath.Join(m.baseDir, "resctrl")
 	data := "resctrl " + resctrlPath + " resctrl " + mountOpts + " 0 0\n"
-	if err := ioutil.WriteFile(mountInfoPath, []byte(data), 0644); err != nil {
+	if err := os.WriteFile(mountInfoPath, []byte(data), 0644); err != nil {
 		m.delete()
 		return nil, err
 	}
@@ -100,7 +99,7 @@ func (m *mockResctrlFs) verifyTextFile(relPath, content string) {
 }
 
 func verifyTextFile(t *testing.T, path, content string) {
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("failed to read %q: %v", path, err)
 	}
@@ -283,7 +282,7 @@ kubernetes:
 
 	// Verify that existing goresctrl monitor groups were removed
 	for _, cls := range []string{RootClassName, "Guaranteed"} {
-		files, _ := ioutil.ReadDir(rdt.classes[cls].path("mon_groups"))
+		files, _ := os.ReadDir(rdt.classes[cls].path("mon_groups"))
 		for _, f := range files {
 			if strings.HasPrefix(mockGroupPrefix, f.Name()) {
 				t.Errorf("unexpected monitor group found %q", f.Name())
