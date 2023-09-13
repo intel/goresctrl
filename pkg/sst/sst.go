@@ -371,11 +371,8 @@ func EnableBF(pkgs ...int) error {
 	}
 
 	for _, i := range info {
-		err = enableBF(i)
-		if err != nil {
-			// Ignore but log error as there might be packages in the
-			// user supplied list that do not exists
-			sstlog.Errorf("sst-bf : %w", err)
+		if err := enableBF(i); err != nil {
+			return err
 		}
 	}
 
@@ -417,11 +414,8 @@ func DisableBF(pkgs ...int) error {
 	}
 
 	for _, i := range info {
-		err = disableBF(i)
-		if err != nil {
-			// Ignore but log error as there might be packages in the
-			// user supplied list that do not exists
-			sstlog.Errorf("sst-bf : %w", err)
+		if err := disableBF(i); err != nil {
+			return err
 		}
 	}
 
