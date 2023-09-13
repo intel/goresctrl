@@ -74,13 +74,13 @@ func getOnlineCpuPackages() (map[int]*cpuPackageInfo, error) {
 	return pkgs, nil
 }
 
-func isHWPEnabled() bool {
+func isHWPEnabled() (bool, error) {
 	status, err := utils.ReadMSR(0, MSR_PM_ENABLE)
 	if err != nil {
-		return false
+		return false, err
 	}
 
-	return (status & 0xff) != 0
+	return (status & 0xff) != 0, nil
 }
 
 func setCPUScalingMin2CPUInfoMinFreq(cpu utils.ID) error {
