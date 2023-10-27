@@ -20,6 +20,7 @@ package sst
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"syscall"
 	"unsafe"
@@ -64,6 +65,10 @@ func isstIoctl(ioctl uintptr, req uintptr) error {
 // numbering differs from the Linux kernel numbering (exposed via sysfs) which
 // is based on APIC.
 func getCPUMapping(cpu utils.ID) (utils.ID, error) {
+	if cpu < 0 || cpu > math.MaxUint32 {
+		return utils.Unknown, fmt.Errorf("Invalid CPU number %d", cpu)
+	}
+
 	req := isstIfCPUMaps{
 		Cmd_count: 1,
 		Cpu_map: [1]isstIfCPUMap{
@@ -80,6 +85,10 @@ func getCPUMapping(cpu utils.ID) (utils.ID, error) {
 
 // sendMboxCmd sends one mailbox command to PUNIT
 func sendMboxCmd(cpu utils.ID, cmd uint16, subCmd uint16, parameter uint32, reqData uint32) (uint32, error) {
+	if cpu < 0 || cpu > math.MaxUint32 {
+		return 0, fmt.Errorf("Invalid CPU number %d", cpu)
+	}
+
 	req := isstIfMboxCmds{
 		Cmd_count: 1,
 		Mbox_cmd: [1]isstIfMboxCmd{
@@ -104,6 +113,10 @@ func sendMboxCmd(cpu utils.ID, cmd uint16, subCmd uint16, parameter uint32, reqD
 
 // sendMMIOCmd sends one MMIO command to PUNIT
 func sendMMIOCmd(cpu utils.ID, reg uint32, value uint32, doWrite bool) (uint32, error) {
+	if cpu < 0 || cpu > math.MaxUint32 {
+		return 0, fmt.Errorf("Invalid CPU number %d", cpu)
+	}
+
 	var ReadWrite uint32
 
 	if doWrite {
