@@ -1,17 +1,22 @@
 name: Verify
-on: [push, pull_request]
+on:
+  schedule:
+    - cron: '15 3 * * *'
+  pull_request:
+    paths-ignore:
+      - "**.md"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-
-  build:
-    name: Build
+  test-and-lint:
     runs-on: ubuntu-22.04
     steps:
-
     - uses: actions/checkout@v2
 
     - uses: actions/setup-go@v4
       with:
-        go-version: "1.20"
+        go-version-file: go.mod
 
     - name: Install golangci-lint
       run: |
@@ -25,3 +30,11 @@ jobs:
 
     - name: Codecov report
       run: bash <(curl -s https://codecov.io/bash)
+
+  trivy:
+    uses: "./.github/workflows/common-trivy.yaml"
+    with:
+      upload-to-github-security-tab: true
+
+  codeql:
+    uses: "./.github/workflows/common-codeql.yaml"
