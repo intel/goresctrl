@@ -96,7 +96,7 @@ func str2slice(str string) []int {
 			continue
 		}
 
-		id, err := strconv.ParseUint(str, 10, 0)
+		id, err := strconv.ParseInt(str, 10, 0)
 		if err != nil {
 			fmt.Printf("invalid value '%s': %v", str, err)
 			continue
