@@ -1483,50 +1483,50 @@ partitions:
 	groupRemoveFunc = os.RemoveAll
 
 	for _, tc := range tcs {
-		t.Logf("Running test case %q", tc.name)
-
-		mockFs, err := newMockResctrlFs(t, tc.fs, tc.fsMountOpts)
-		if err != nil {
-			t.Fatalf("failed to set up mock resctrl fs: %v", err)
-		}
-		defer mockFs.delete()
-
-		if err := Initialize(mockGroupPrefix); err != nil {
-			t.Fatalf("resctrl initialization failed: %v", err)
-		}
-
-		err = SetConfigFromData([]byte(tc.config), false)
-		if tc.configErrRe != "" {
-			if err == nil {
-				t.Fatalf("resctrl configuration succeeded unexpectedly")
-			} else {
-				m, e := regexp.MatchString(tc.configErrRe, err.Error())
-				if e != nil {
-					t.Fatalf("error in regexp matching: %v", e)
-				}
-				if !m {
-					t.Fatalf("unexpected error message:\n  %q\n  does NOT match regexp\n  %q", err.Error(), tc.configErrRe)
-				}
-			}
-		} else {
+		t.Run(tc.name, func(t *testing.T) {
+			mockFs, err := newMockResctrlFs(t, tc.fs, tc.fsMountOpts)
 			if err != nil {
-				t.Fatalf("resctrl configuration failed: %v", err)
+				t.Fatalf("failed to set up mock resctrl fs: %v", err)
 			}
-			verifySchemata(&tc)
-		}
+			defer mockFs.delete()
 
-		// Check that SetConfig does not alter the config struct
-		conf := parseTestConfig(t, tc.config)
-		confDataOld, err := yaml.Marshal(conf)
-		if err != nil {
-			t.Fatalf("marshalling config failed: %v", err)
-		}
-		_ = SetConfig(conf, false)
-		if confDataNew, err := yaml.Marshal(conf); err != nil {
-			t.Fatalf("marshalling config failed: %v", err)
-		} else if !cmp.Equal(confDataNew, confDataOld) {
-			t.Fatalf("SetConfig altered config data:\n%s\nVS.\n%s", confDataOld, confDataNew)
-		}
+			if err := Initialize(mockGroupPrefix); err != nil {
+				t.Fatalf("resctrl initialization failed: %v", err)
+			}
+
+			err = SetConfigFromData([]byte(tc.config), false)
+			if tc.configErrRe != "" {
+				if err == nil {
+					t.Fatalf("resctrl configuration succeeded unexpectedly")
+				} else {
+					m, e := regexp.MatchString(tc.configErrRe, err.Error())
+					if e != nil {
+						t.Fatalf("error in regexp matching: %v", e)
+					}
+					if !m {
+						t.Fatalf("unexpected error message:\n  %q\n  does NOT match regexp\n  %q", err.Error(), tc.configErrRe)
+					}
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("resctrl configuration failed: %v", err)
+				}
+				verifySchemata(&tc)
+			}
+
+			// Check that SetConfig does not alter the config struct
+			conf := parseTestConfig(t, tc.config)
+			confDataOld, err := yaml.Marshal(conf)
+			if err != nil {
+				t.Fatalf("marshalling config failed: %v", err)
+			}
+			_ = SetConfig(conf, false)
+			if confDataNew, err := yaml.Marshal(conf); err != nil {
+				t.Fatalf("marshalling config failed: %v", err)
+			} else if !cmp.Equal(confDataNew, confDataOld) {
+				t.Fatalf("SetConfig altered config data:\n%s\nVS.\n%s", confDataOld, confDataNew)
+			}
+		})
 	}
 }
 
