@@ -147,8 +147,6 @@ partitions:
           all: [33%]
         kubernetes:
           denyPodAnnotation: true
-kubernetes:
-  allowedPodAnnotationClasses: [bar, foo]
 `
 
 	verifyGroupNames := func(a interface{}, b []string) {
@@ -780,6 +778,18 @@ partitions:
   part-1:
     classes:
       "..":
+`,
+		},
+		// Testcase
+		TC{
+			name:        "invalid field (fail)",
+			fs:          "resctrl.nomb",
+			configErrRe: ` unknown field "foo"`,
+			config: `
+partitions:
+  part-1:
+    l3Allocation: 100%
+    foo: bar
 `,
 		},
 		// Testcase
@@ -1481,17 +1491,11 @@ partitions:
 		}
 		defer mockFs.delete()
 
-		conf := parseTestConfig(t, tc.config)
-		confDataOld, err := yaml.Marshal(conf)
-		if err != nil {
-			t.Fatalf("marshalling config failed: %v", err)
-		}
-
 		if err := Initialize(mockGroupPrefix); err != nil {
 			t.Fatalf("resctrl initialization failed: %v", err)
 		}
 
-		err = SetConfig(conf, false)
+		err = SetConfigFromData([]byte(tc.config), false)
 		if tc.configErrRe != "" {
 			if err == nil {
 				t.Fatalf("resctrl configuration succeeded unexpectedly")
@@ -1511,6 +1515,13 @@ partitions:
 			verifySchemata(&tc)
 		}
 
+		// Check that SetConfig does not alter the config struct
+		conf := parseTestConfig(t, tc.config)
+		confDataOld, err := yaml.Marshal(conf)
+		if err != nil {
+			t.Fatalf("marshalling config failed: %v", err)
+		}
+		_ = SetConfig(conf, false)
 		if confDataNew, err := yaml.Marshal(conf); err != nil {
 			t.Fatalf("marshalling config failed: %v", err)
 		} else if !cmp.Equal(confDataNew, confDataOld) {
