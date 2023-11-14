@@ -173,7 +173,7 @@ func SetConfigFromFile(filename string, force bool) error {
 // SetConfigFromData parses and applies configuration from data.
 func SetConfigFromData(data []byte, force bool) error {
 	config := &Config{}
-	if err := yaml.Unmarshal(data, &config); err != nil {
+	if err := yaml.UnmarshalStrict(data, &config); err != nil {
 		return err
 	}
 	return SetConfig(config, force)
