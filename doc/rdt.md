@@ -36,7 +36,11 @@ resources. Resources include portions of caches (L2 and L3) and memory
 bandwidth (MB). Cache partitioning is exclusive: cache portions of two
 partitions are not allowed to overlap. However, by design of the underlying
 technology, MB allocations are not exclusive. Thus, it is possible to assign
-all partitions 100% of memory bandwidth, for example.
+all partitions 100% of memory bandwidth, for example. `Partitions` are purely
+a `goresctrl` concept. They are designed to help divide resources managed by
+the Linux `resctrl` filesystem into disjoint sets that do not overlap, yet
+collectively fully utilize the set of available resources. `Partitions` do
+not have a corresponding abstraction in the Linux resctrl filesystem itself.
 
 ### Classes
 
@@ -46,12 +50,13 @@ partition may overlap (and they usually do).
 
 Requirements for class specifications:
 
-- Names of classes must be unique accross all partitions
+- Names of classes must be unique accross all partitions.
 - Total number of classes (CLOSes) supported by the underlying hardware must
   not be exceeded.
   - **NOTE:** resctrl root and possible groups managed outside goresctrl are also
   accounted against this limit.
-- Reserved name `DEFAULT` or an empty string refer to the resctrl root
+- The root (or default) resctrl group can be configured by specifying class 
+  with the name `system/default` or empty string in the RDT config.
 
 ## Configuration format
 
