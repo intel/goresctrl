@@ -19,7 +19,6 @@ import (
 
 	oci "github.com/opencontainers/runtime-spec/specs-go"
 
-	"github.com/intel/goresctrl/pkg/cgroups"
 	"github.com/intel/goresctrl/pkg/testutils"
 )
 
@@ -28,7 +27,7 @@ func TestOciLinuxBlockIO(t *testing.T) {
 	tcases := []struct {
 		name            string
 		class           string
-		blockIOClasses  map[string]cgroups.BlockIOParameters
+		blockIOClasses  map[string]BlockIOParameters
 		expectedBlockIO *oci.LinuxBlockIO
 		// It would be great to define expected
 		// oci.LinuxBlockIO with a single literal.  But that
@@ -53,26 +52,26 @@ func TestOciLinuxBlockIO(t *testing.T) {
 		{
 			name:  "all fields",
 			class: "allfields",
-			blockIOClasses: map[string]cgroups.BlockIOParameters{
-				"allfields": cgroups.BlockIOParameters{
+			blockIOClasses: map[string]BlockIOParameters{
+				"allfields": BlockIOParameters{
 					Weight: 10,
-					WeightDevice: cgroups.DeviceWeights{
+					WeightDevice: DeviceWeights{
 						{Major: 20, Minor: 21, Weight: 22},
 						{Major: 23, Minor: 24, Weight: 25},
 					},
-					ThrottleReadBpsDevice: cgroups.DeviceRates{
+					ThrottleReadBpsDevice: DeviceRates{
 						{Major: 30, Minor: 31, Rate: 32},
 						{Major: 33, Minor: 34, Rate: 35},
 					},
-					ThrottleWriteBpsDevice: cgroups.DeviceRates{
+					ThrottleWriteBpsDevice: DeviceRates{
 						{Major: 40, Minor: 41, Rate: 42},
 						{Major: 43, Minor: 44, Rate: 45},
 					},
-					ThrottleReadIOPSDevice: cgroups.DeviceRates{
+					ThrottleReadIOPSDevice: DeviceRates{
 						{Major: 50, Minor: 51, Rate: 52},
 						{Major: 53, Minor: 54, Rate: 55},
 					},
-					ThrottleWriteIOPSDevice: cgroups.DeviceRates{
+					ThrottleWriteIOPSDevice: DeviceRates{
 						{Major: 60, Minor: 61, Rate: 62},
 						{Major: 63, Minor: 64, Rate: 65},
 					},

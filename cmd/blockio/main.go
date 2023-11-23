@@ -62,7 +62,6 @@ func main() {
 	})
 	optConfig := flag.String("config", "", "load class configuration from FILE")
 	optClass := flag.String("class", "", "use configuration of the blockio class NAME")
-	optCgroup := flag.String("cgroup", "", "apply class to CGROUP, otherwise print it as OCI BlockIO structure")
 	flag.Parse()
 
 	if optConfig == nil || *optConfig == "" {
@@ -78,23 +77,14 @@ func main() {
 		errorExit("%v", err)
 	}
 
-	if optCgroup == nil || *optCgroup == "" {
-		// If -cgroup=CGROUP is missing, print OCI spec.
-		oci, err := blockio.OciLinuxBlockIO(*optClass)
-		if err != nil {
-			errorExit("%v", err)
-		}
-		ociBytes, err := json.Marshal(oci)
-		if err != nil {
-			errorExit("%v", err)
-		}
-		fmt.Printf("%s\n", ociBytes)
-	} else {
-		// If -cgroup=CGROUP is given, apply class configuration to it.
-		err := blockio.SetCgroupClass(*optCgroup, *optClass)
-		if err != nil {
-			errorExit("%v", err)
-		}
-		fmt.Printf("cgroup %s configured to blockio class %q\n", *optCgroup, *optClass)
+	// Print OCI spec.
+	oci, err := blockio.OciLinuxBlockIO(*optClass)
+	if err != nil {
+		errorExit("%v", err)
 	}
+	ociBytes, err := json.Marshal(oci)
+	if err != nil {
+		errorExit("%v", err)
+	}
+	fmt.Printf("%s\n", ociBytes)
 }

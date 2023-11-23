@@ -21,7 +21,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/intel/goresctrl/pkg/cgroups"
 	"github.com/intel/goresctrl/pkg/testutils"
 )
 
@@ -37,12 +36,12 @@ var knownIOSchedulers map[string]bool = map[string]bool{
 
 // TestSetConfig: unit tests for SetConfigFromFile(), SetConfigFromData(), and SetConfig().
 func TestSetConfig(t *testing.T) {
-	initialConf := map[string]cgroups.BlockIOParameters{
-		"classname": cgroups.BlockIOParameters{},
+	initialConf := map[string]BlockIOParameters{
+		"classname": BlockIOParameters{},
 	}
-	emptyConf := map[string]cgroups.BlockIOParameters{}
-	goodConf := map[string]cgroups.BlockIOParameters{
-		"goodclass": cgroups.NewBlockIOParameters(),
+	emptyConf := map[string]BlockIOParameters{}
+	goodConf := map[string]BlockIOParameters{
+		"goodclass": NewBlockIOParameters(),
 	}
 	classBlockIO = copyConf(initialConf)
 
@@ -111,8 +110,8 @@ func TestSetConfig(t *testing.T) {
 }
 
 // copyConf returns a shallow copy of blockio class configuration.
-func copyConf(orig map[string]cgroups.BlockIOParameters) map[string]cgroups.BlockIOParameters {
-	result := map[string]cgroups.BlockIOParameters{}
+func copyConf(orig map[string]BlockIOParameters) map[string]BlockIOParameters {
+	result := map[string]BlockIOParameters{}
 	for key, value := range orig {
 		result[key] = value
 	}
@@ -120,19 +119,19 @@ func copyConf(orig map[string]cgroups.BlockIOParameters) map[string]cgroups.Bloc
 }
 
 func TestClassNames(t *testing.T) {
-	classBlockIO = map[string]cgroups.BlockIOParameters{
-		"a": cgroups.BlockIOParameters{},
-		"z": cgroups.BlockIOParameters{},
-		"b": cgroups.BlockIOParameters{},
-		"x": cgroups.BlockIOParameters{},
-		"c": cgroups.BlockIOParameters{},
-		"d": cgroups.BlockIOParameters{},
+	classBlockIO = map[string]BlockIOParameters{
+		"a": BlockIOParameters{},
+		"z": BlockIOParameters{},
+		"b": BlockIOParameters{},
+		"x": BlockIOParameters{},
+		"c": BlockIOParameters{},
+		"d": BlockIOParameters{},
 	}
 	classes := GetClasses()
 	testutils.VerifyStringSlices(t,
 		[]string{"a", "b", "c", "d", "x", "z"},
 		classes)
-	classBlockIO = map[string]cgroups.BlockIOParameters{}
+	classBlockIO = map[string]BlockIOParameters{}
 	classes = GetClasses()
 	testutils.VerifyStringSlices(t,
 		[]string{},
@@ -231,7 +230,7 @@ func TestDevicesParametersToCgBlockIO(t *testing.T) {
 		name                    string
 		dps                     []DevicesParameters
 		iosched                 map[string]string
-		expectedOci             *cgroups.BlockIOParameters
+		expectedOci             *BlockIOParameters
 		expectedErrorCount      int
 		expectedErrorSubstrings []string
 	}{
@@ -251,21 +250,21 @@ func TestDevicesParametersToCgBlockIO(t *testing.T) {
 				},
 			},
 			iosched: map[string]string{"/dev/sda": "bfq"},
-			expectedOci: &cgroups.BlockIOParameters{
+			expectedOci: &BlockIOParameters{
 				Weight: 144,
-				WeightDevice: cgroups.DeviceWeights{
+				WeightDevice: DeviceWeights{
 					{Major: 11, Minor: 12, Weight: 50},
 				},
-				ThrottleReadBpsDevice: cgroups.DeviceRates{
+				ThrottleReadBpsDevice: DeviceRates{
 					{Major: 11, Minor: 12, Rate: 1000000000},
 				},
-				ThrottleWriteBpsDevice: cgroups.DeviceRates{
+				ThrottleWriteBpsDevice: DeviceRates{
 					{Major: 11, Minor: 12, Rate: 2000000},
 				},
-				ThrottleReadIOPSDevice: cgroups.DeviceRates{
+				ThrottleReadIOPSDevice: DeviceRates{
 					{Major: 11, Minor: 12, Rate: 3000},
 				},
-				ThrottleWriteIOPSDevice: cgroups.DeviceRates{
+				ThrottleWriteIOPSDevice: DeviceRates{
 					{Major: 11, Minor: 12, Rate: 4},
 				},
 			},
@@ -290,14 +289,14 @@ func TestDevicesParametersToCgBlockIO(t *testing.T) {
 				},
 			},
 			iosched: map[string]string{"/dev/sda": "bfq", "/dev/sdb": "bfq", "/dev/sdc": "cfq"},
-			expectedOci: &cgroups.BlockIOParameters{
+			expectedOci: &BlockIOParameters{
 				Weight: -1,
-				WeightDevice: cgroups.DeviceWeights{
+				WeightDevice: DeviceWeights{
 					{Major: 11, Minor: 12, Weight: 110},
 					{Major: 21, Minor: 22, Weight: 220},
 					{Major: 31, Minor: 32, Weight: 330},
 				},
-				ThrottleReadBpsDevice: cgroups.DeviceRates{
+				ThrottleReadBpsDevice: DeviceRates{
 					{Major: 11, Minor: 12, Rate: 100},
 					{Major: 21, Minor: 22, Rate: 200},
 					{Major: 31, Minor: 32, Rate: 300},
