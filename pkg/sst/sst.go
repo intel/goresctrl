@@ -97,6 +97,10 @@ func SstSupported() bool {
 
 // Check that a list of CPUs belong to a given package
 func CheckPackageCpus(info *SstPackageInfo, cpus utils.IDSet) bool {
+	if info == nil {
+		return false
+	}
+
 	return info.pkg.hasCpus(cpus)
 }
 
@@ -554,6 +558,10 @@ func assignCPU2Clos(info *SstPackageInfo, clos int) error {
 
 // ConfigureCP will allow caller to configure CPUs to various Clos.
 func ConfigureCP(info *SstPackageInfo, priority int, cpu2clos *ClosCPUSet) error {
+	if info == nil {
+		return fmt.Errorf("package info is nil")
+	}
+
 	if priority < 0 || priority > 1 {
 		return fmt.Errorf("Invalid CP priority value %d (valid 0 or 1)", priority)
 	}
@@ -588,6 +596,10 @@ func ConfigureCP(info *SstPackageInfo, priority int, cpu2clos *ClosCPUSet) error
 
 // ClosSetup stores the user supplied Clos information into punit
 func ClosSetup(info *SstPackageInfo, clos int, closInfo *SstClosInfo) error {
+	if info == nil {
+		return fmt.Errorf("package info is nil")
+	}
+
 	if clos < 0 || clos >= NumClos {
 		return fmt.Errorf("Invalid Clos value (%d)", clos)
 	}
@@ -649,6 +661,9 @@ func ResetCPConfig() error {
 
 // EnableCP enables SST-CP feature
 func EnableCP(info *SstPackageInfo) error {
+	if info == nil {
+		return fmt.Errorf("package info is nil")
+	}
 	if !info.CPSupported {
 		return fmt.Errorf("SST CP not supported")
 	}
