@@ -13,3 +13,8 @@ jobs:
     uses: "./.github/workflows/common-trivy.yaml"
     with:
       export-csv: true
+
+  codeql:
+    uses: "./.github/workflows/common-codeql.yaml"
+    with:
+      export-report: true
