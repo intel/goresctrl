@@ -134,7 +134,7 @@ partitions:
 | Field | Format | Example | Description |
 | ----- | ------ | ------- | ----------- |
 | `<partition-name>` | string | `exclusive` | Name of a higher level RDT partition.
-| `<class-name>`     | string | `guaranteed` | Name of an RDT class, mapping to a directory in the resctrl fs. Reserved name `DEFAULT` or an empty string can be used to refer to the root class.
+| `<class-name>`     | string | `guaranteed` | Name of an RDT class, mapping to a directory in the resctrl fs. Reserved name `system/default` or an empty string can be used to refer to the root class.
 | `<cache-ids>`      | cpuset (string) | `0,2,4,8-11` | Set of cache ids. Special value 'all' denotes a default used for cache "all the reset".
 | `<cat-allocation-spec>` | percentage (string) | `"60%"` | Cache allocation spec, may be specified as relative (percentage) or absolute (bitmask). An absolute bitmask must be contiguous.
                           | hex bitmask (string) | `"0xf0"` |
@@ -229,7 +229,7 @@ partitions:
         l3Allocation: "50%"
         # The class will get 100% by default
         #mbAllocation: ["100%"]
-      DEFAULT:
+      system/default:
         # Also configure the resctrl root that all processes in the system are
         # placed in by default
         l2Allocation: "50%"
