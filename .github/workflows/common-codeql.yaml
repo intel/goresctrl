@@ -7,6 +7,10 @@ on:
         required: false
         type: boolean
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   codeql-scan:
     runs-on: ubuntu-22.04
