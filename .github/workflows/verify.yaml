@@ -5,9 +5,15 @@ on:
   pull_request:
     paths-ignore:
       - "**.md"
+
+permissions:
+  contents: read
+  security-events: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
 jobs:
   test-and-lint:
     runs-on: ubuntu-22.04
