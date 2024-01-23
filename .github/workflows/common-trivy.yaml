@@ -13,7 +13,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   trivy-scan-licenses:
@@ -33,6 +32,8 @@ jobs:
 
   trivy-scan-vulns:
     runs-on: ubuntu-22.04
+    permissions:
+      security-events: write
     steps:
     - name: Checkout
       uses: actions/checkout@v3

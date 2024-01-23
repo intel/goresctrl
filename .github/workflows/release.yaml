@@ -6,7 +6,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref_name }}
@@ -14,11 +13,17 @@ concurrency:
 
 jobs:
   trivy:
+    permissions:
+      contents: read
+      security-events: write
     uses: "./.github/workflows/common-trivy.yaml"
     with:
       export-csv: true
 
   codeql:
+    permissions:
+      contents: read
+      security-events: write
     uses: "./.github/workflows/common-codeql.yaml"
     with:
       export-report: true
