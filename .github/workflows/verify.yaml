@@ -1,7 +1,6 @@
 name: Verify
 on:
-  schedule:
-    - cron: '15 3 * * *'
+  push:
   pull_request:
     paths-ignore:
       - "**.md"
