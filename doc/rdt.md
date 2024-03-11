@@ -305,6 +305,35 @@ MBps.
             mbAllocation: ["50%", "1000MBps"]
 ```
 
+In case raw bitmasks are used to configure the cache size of a class, these bitmasks do not correspond to the bitmasks within the `schemata` file of the class in `/sys/fs/resctrl` (e.g. `/sys/fs/resctrl/schemata` in case of `system/default`). Instead, the bitmasks denote the amount of cache lines used for the class relative to the cache lines that the bitmask of the partition describes that the class belongs to. This is shown in the following example.
+
+```yaml
+...
+partitions:
+  root:
+    l2Allocation: "0xfff00"
+    l3Allocation: "0xff0"
+    classes:
+      # all cache lines of the root partition are used
+      system/default:
+        l2Allocation: "0xfff"
+        l3Allocation: "0xff"
+  exclusive:
+    l2Allocation: "0xff"
+    l3Allocation: "0xf"
+    classes:
+      COS1:
+        # lowest 5 cache lines of the exclusive partition are used
+        l2Allocation: "0x1f"
+        # lowest 2 cache lines of the exclusive partition are used
+        l3Allocation: "0x3"
+      COS2:
+        # highest 3 cache lines of the exclusive partition are used
+        l2Allocation: "0x70"
+        # highest 6 cache lines of the exclusive partition are used
+        l3Allocation: "0xfc"
+```
+
 ## Dynamic Configuration
 
 RDT supports dynamic configuration i.e. the parameters of existing classes may
