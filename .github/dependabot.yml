@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    target-branch: main
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Disable version updates (we're a library)
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: "github-actions"
+    target-branch: main
+    directory: "/"
+    schedule:
+      interval: "daily"
