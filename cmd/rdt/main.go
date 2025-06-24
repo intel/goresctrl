@@ -21,8 +21,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"maps"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/intel/goresctrl/pkg/rdt"
@@ -33,38 +34,94 @@ var (
 	groupPrefix string
 )
 
-type subCmd func([]string) error
+type subCmd struct {
+	description string
+	f           func([]string) error
+}
 
 var subCmds = map[string]subCmd{
-	"info":      subCmdInfo,
-	"configure": subCmdConfigure,
+	"configure": subCmd{
+		description: "Configure resctrl filesystem",
+		f:           subCmdConfigure,
+	},
+	"help": subCmd{
+		description: "Display this help",
+		f:           subCmdHelp,
+	},
+	"info": subCmd{
+		description: "Display information about resctrl filesystem",
+		f:           subCmdInfo,
+	},
 }
 
 func main() {
-	cmds := make([]string, 0, len(subCmds))
-	for c := range subCmds {
-		cmds = append(cmds, c)
-	}
-	sort.Strings(cmds)
-	allCmds := strings.Join(cmds, ", ")
+	setUsage()
 
-	if len(os.Args) < 2 {
-		exitError("missing sub-command, must be one of: %s\n", allCmds)
+	// Define the main help flag manually
+	help := flag.Bool("help", false, "Display this help")
+	flag.Parse()
+
+	if *help {
+		flag.Usage()
+		os.Exit(0)
+	}
+
+	args := flag.Args()
+	if len(args) < 1 {
+		flag.Usage()
+		os.Exit(1)
 	}
 
 	// Run sub-command
-	cmd, ok := subCmds[os.Args[1]]
+	cmd, ok := subCmds[args[0]]
 	if !ok {
-		exitError("unknown sub-command %q, must be of: %s\n", os.Args[1], allCmds)
+		fmt.Fprintf(os.Stderr, "unknown sub-command %q\n", args[0])
+		flag.Usage()
+		os.Exit(2)
 	}
 
-	if err := cmd(os.Args[2:]); err != nil {
-		exitError("sub-command %q failed: %v\n", os.Args[1], err)
+	if err := cmd.f(args[1:]); err != nil {
+		fmt.Fprintf(os.Stderr, "sub-command %q failed: %v\n", args[0], err)
+		os.Exit(1)
+	}
+}
+
+func setUsage() {
+	usage := `Usage: rdt <command> [options]
+
+Available commands:`
+
+	for _, c := range slices.Sorted(maps.Keys(subCmds)) {
+		usage += fmt.Sprintf("\n  %-12s %s", c, subCmds[c].description)
+	}
+
+	usage += `
+
+Use "rdt <command> --help" for more information about a command.
+`
+
+	flag.Usage = func() {
+		fmt.Fprint(os.Stderr, usage)
+
+		fmt.Fprint(os.Stderr, "\nGlobal options:\n")
+		flag.PrintDefaults()
 	}
 }
 
 func addGlobalFlags(flagset *flag.FlagSet) {
 	flagset.StringVar(&groupPrefix, "group-prefix", "", "prefix to use for resctrl groups")
+}
+
+func subCmdHelp(args []string) error {
+	// Parse command line args
+	flags := flag.NewFlagSet("help", flag.ExitOnError)
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	// Run sub-command
+	flag.Usage()
+	return nil
 }
 
 func subCmdInfo(args []string) error {
@@ -135,9 +192,4 @@ func subCmdConfigure(args []string) error {
 	fmt.Println("Done!")
 
 	return nil
-}
-
-func exitError(format string, args ...interface{}) {
-	fmt.Printf("ERROR: "+format+"\n", args...)
-	os.Exit(1)
 }
