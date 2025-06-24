@@ -55,7 +55,8 @@ var subCmds = map[string]subCmd{
 }
 
 func main() {
-	setUsage()
+	flag.CommandLine.SetOutput(os.Stdout)
+	flag.Usage = usage
 
 	// Define the main help flag manually
 	help := flag.Bool("help", false, "Display this help")
@@ -75,37 +76,34 @@ func main() {
 	// Run sub-command
 	cmd, ok := subCmds[args[0]]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "unknown sub-command %q\n", args[0])
+		fmt.Printf("unknown sub-command %q\n", args[0])
 		flag.Usage()
 		os.Exit(2)
 	}
 
 	if err := cmd.f(args[1:]); err != nil {
-		fmt.Fprintf(os.Stderr, "sub-command %q failed: %v\n", args[0], err)
+		fmt.Printf("sub-command %q failed: %v\n", args[0], err)
 		os.Exit(1)
 	}
 }
 
-func setUsage() {
-	usage := `Usage: rdt <command> [options]
+func usage() {
+	f := flag.CommandLine.Output()
+	fmt.Fprint(f, `Usage: rdt <command> [options]
 
-Available commands:`
+Available commands:`)
 
 	for _, c := range slices.Sorted(maps.Keys(subCmds)) {
-		usage += fmt.Sprintf("\n  %-12s %s", c, subCmds[c].description)
+		fmt.Fprintf(f, "\n  %-12s %s", c, subCmds[c].description)
 	}
 
-	usage += `
+	fmt.Fprint(f, `
 
 Use "rdt <command> --help" for more information about a command.
-`
+`)
 
-	flag.Usage = func() {
-		fmt.Fprint(os.Stderr, usage)
-
-		fmt.Fprint(os.Stderr, "\nGlobal options:\n")
-		flag.PrintDefaults()
-	}
+	fmt.Fprint(f, "\nGlobal options:\n")
+	flag.PrintDefaults()
 }
 
 func addGlobalFlags(flagset *flag.FlagSet) {
