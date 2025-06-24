@@ -94,6 +94,7 @@ func main() {
 	}
 }
 
+// nolint:errcheck
 func usage() {
 	f := flag.CommandLine.Output()
 	fmt.Fprint(f, `Usage: rdt <command> [options]
