@@ -22,11 +22,14 @@ import (
 	"flag"
 	"fmt"
 	"maps"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
 
 	"github.com/intel/goresctrl/pkg/rdt"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -51,6 +54,10 @@ var subCmds = map[string]subCmd{
 	"info": subCmd{
 		description: "Display information about resctrl filesystem",
 		f:           subCmdInfo,
+	},
+	"monitor": subCmd{
+		description: "Monitor resctrl groups",
+		f:           subCmdMonitor,
 	},
 }
 
@@ -190,5 +197,32 @@ func subCmdConfigure(args []string) error {
 
 	fmt.Println("Done!")
 
+	return nil
+}
+
+func subCmdMonitor(args []string) error {
+	// Parse command line args
+	flags := flag.NewFlagSet("configure", flag.ExitOnError)
+	addGlobalFlags(flags)
+
+	port := flags.Int("port", 8080, "port to serve metrics on")
+
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
+	// Run sub-command
+	if err := rdt.Initialize(groupPrefix); err != nil {
+		return fmt.Errorf("RDT is not enabled: %v", err)
+	}
+
+	prometheusRegistry := prometheus.NewRegistry()
+	prometheusRegistry.MustRegister(rdt.NewCollector())
+	http.Handle("/metrics", promhttp.HandlerFor(prometheusRegistry, promhttp.HandlerOpts{}))
+
+	fmt.Printf("Serving prometheus metrics at :%d/metrics\n", *port)
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
+		return fmt.Errorf("error running HTTP server: %v", err)
+	}
 	return nil
 }
