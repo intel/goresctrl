@@ -67,6 +67,7 @@ func (c collector) Collect(ch chan<- prometheus.Metric) {
 	var wg sync.WaitGroup
 
 	for _, cls := range GetClasses() {
+		c.collectGroupMetrics(ch, cls)
 		for _, monGrp := range cls.GetMonGroups() {
 			wg.Add(1)
 			g := monGrp
