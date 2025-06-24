@@ -43,19 +43,19 @@ func NewLoggerWrapper(l *stdlog.Logger) Logger {
 }
 
 func (l *logger) Debugf(format string, v ...interface{}) {
-	l.Logger.Printf("DEBUG: "+format, v...)
+	l.Printf("DEBUG: "+format, v...)
 }
 
 func (l *logger) Infof(format string, v ...interface{}) {
-	l.Logger.Printf("INFO: "+format, v...)
+	l.Printf("INFO: "+format, v...)
 }
 
 func (l *logger) Warnf(format string, v ...interface{}) {
-	l.Logger.Printf("WARN: "+format, v...)
+	l.Printf("WARN: "+format, v...)
 }
 
 func (l *logger) Errorf(format string, v ...interface{}) {
-	l.Logger.Printf("ERROR: "+format, v...)
+	l.Printf("ERROR: "+format, v...)
 }
 
 func (l *logger) Panicf(format string, v ...interface{}) {

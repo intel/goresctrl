@@ -52,9 +52,15 @@ func TestSetConfig(t *testing.T) {
 	badConfFile := testutils.CreateTempFile(t, "bad config contents.\n")
 	emptyConfFile := testutils.CreateTempFile(t, "")
 	goodConfFile := testutils.CreateTempFile(t, "Classes:\n  goodclass:\n")
-	defer os.Remove(badConfFile)
-	defer os.Remove(emptyConfFile)
-	defer os.Remove(goodConfFile)
+	rm := func(f string) {
+		if err := os.Remove(f); err != nil {
+			t.Logf("failed to remove temporary file %s: %v", f, err)
+		}
+	}
+	defer rm(badConfFile)
+	defer rm(emptyConfFile)
+	defer rm(goodConfFile)
+	t.Logf("failed to remove temporary file %s: %v", goodConfFile, err)
 
 	for syntaxerror := 0; syntaxerror < 4; syntaxerror++ {
 		classBlockIO, err = copyConf(initialConf), nil
@@ -359,21 +365,22 @@ type mockPlatform struct{}
 func (mpf mockPlatform) configurableBlockDevices(devWildcards []string) ([]tBlockDeviceInfo, error) {
 	blockDevices := []tBlockDeviceInfo{}
 	for _, devWildcard := range devWildcards {
-		if devWildcard == "/dev/sda" {
+		switch devWildcard {
+		case "/dev/sda":
 			blockDevices = append(blockDevices, tBlockDeviceInfo{
 				Major:   11,
 				Minor:   12,
 				DevNode: devWildcard,
 				Origin:  fmt.Sprintf("from wildcards %v", devWildcard),
 			})
-		} else if devWildcard == "/dev/sdb" {
+		case "/dev/sdb":
 			blockDevices = append(blockDevices, tBlockDeviceInfo{
 				Major:   21,
 				Minor:   22,
 				DevNode: devWildcard,
 				Origin:  fmt.Sprintf("from wildcards %v", devWildcard),
 			})
-		} else if devWildcard == "/dev/sdc" {
+		case "/dev/sdc":
 			blockDevices = append(blockDevices, tBlockDeviceInfo{
 				Major:   31,
 				Minor:   32,

@@ -237,7 +237,11 @@ partitions:
 	}
 	// Configuration should fail as "Stale" class has pids assigned to it
 	testConfigFile := testutils.CreateTempFile(t, rdtTestConfig)
-	defer os.Remove(testConfigFile)
+	defer func() {
+		if err := os.Remove(testConfigFile); err != nil {
+			t.Logf("failed to remove temporary file %s: %v", testConfigFile, err)
+		}
+	}()
 	if err := SetConfigFromFile(testConfigFile, false); err == nil {
 		t.Fatalf("rdt configuration succeeded unexpetedly")
 	}

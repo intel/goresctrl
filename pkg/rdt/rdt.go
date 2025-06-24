@@ -693,12 +693,16 @@ func (r *resctrlGroup) GetPids() ([]string, error) {
 	return []string{}, nil
 }
 
-func (r *resctrlGroup) AddPids(pids ...string) error {
+func (r *resctrlGroup) AddPids(pids ...string) (err error) {
 	f, err := os.OpenFile(r.path("tasks"), os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	for _, pid := range pids {
 		if _, err := f.WriteString(pid + "\n"); err != nil {
@@ -709,7 +713,7 @@ func (r *resctrlGroup) AddPids(pids ...string) error {
 			}
 		}
 	}
-	return nil
+	return
 }
 
 func (r *resctrlGroup) GetMonData() MonData {

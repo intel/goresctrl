@@ -189,7 +189,7 @@ func getPackage(packageStr string, cpus utils.IDSet) (map[int]*sst.SstPackageInf
 	pkgs := str2slice(packageStr)
 	if len(pkgs) > 1 {
 		fmt.Printf("Only one package can be configured at a time (you have %d)\n", len(pkgs))
-		return nil, nil, nil, fmt.Errorf("Provide one package value only")
+		return nil, nil, nil, fmt.Errorf("provide one package value only")
 	}
 
 	if len(pkgs) == 0 {
@@ -216,7 +216,7 @@ func getPackage(packageStr string, cpus utils.IDSet) (map[int]*sst.SstPackageInf
 		for packageId, info = range infomap {
 			if !sst.CheckPackageCpus(info, cpus) {
 				fmt.Printf("All the CPUs %v must belong to one specific package\n", cpus)
-				return nil, nil, nil, fmt.Errorf("Not all CPUs belong to package %d", packageId)
+				return nil, nil, nil, fmt.Errorf("not all CPUs belong to package %d", packageId)
 			}
 
 			pkgs = append(pkgs, packageId)
@@ -288,7 +288,7 @@ func subCmdCP(args []string) error {
 	}
 
 	if enable && disable {
-		return fmt.Errorf("Please provide either -enable or -disable flag")
+		return fmt.Errorf("please provide either -enable or -disable flag")
 	}
 
 	// If user specifies a list of CPUs, then he/she wants to assign those
@@ -303,15 +303,15 @@ func subCmdCP(args []string) error {
 
 		infomap, info, pkgs, err = getPackage(packageIds, cpus)
 		if err != nil {
-			return fmt.Errorf("Cannot get CPUs %v package: %w", cpus, err)
+			return fmt.Errorf("cannot get CPUs %v package: %w", cpus, err)
 		}
 
 		if len(pkgs) == 0 {
-			return fmt.Errorf("All the CPUs %v must belong to one specific package", cpus)
+			return fmt.Errorf("all the CPUs %v must belong to one specific package", cpus)
 		}
 
 		if clos < 0 {
-			return fmt.Errorf("Clos not set, use -clos option")
+			return fmt.Errorf("CLOS not set, use -clos option")
 		}
 
 		cpu2Clos := make(sst.ClosCPUSet, 1)
@@ -324,7 +324,7 @@ func subCmdCP(args []string) error {
 	} else if clos >= 0 {
 		pkgs = str2slice(packageIds)
 		if len(pkgs) == 0 {
-			return fmt.Errorf("No packages set, invalid value %q", packageIds)
+			return fmt.Errorf("no packages set, invalid value %q", packageIds)
 		}
 
 		closinfo := sst.SstClosInfo{
@@ -337,17 +337,17 @@ func subCmdCP(args []string) error {
 
 		infomap, err = sst.GetPackageInfo(pkgs...)
 		if err != nil {
-			return fmt.Errorf("Cannot get package info: %w", err)
+			return fmt.Errorf("cannot get package info: %w", err)
 		}
 
 		for _, info = range infomap {
 			if err := sst.ClosSetup(info, clos, &closinfo); err != nil {
-				return fmt.Errorf("Cannot set Clos: %w", err)
+				return fmt.Errorf("cannot set Clos: %w", err)
 			}
 		}
 	} else {
 		if (!enable && !disable) && clos < 0 {
-			return fmt.Errorf("Clos not set, use -clos option")
+			return fmt.Errorf("CLOS not set, use -clos option")
 		}
 
 		// Print information if user just wants to enable / disable CP
@@ -357,14 +357,14 @@ func subCmdCP(args []string) error {
 	if enable || disable {
 		for packageId, info = range infomap {
 			if enable {
-				fmt.Printf("Enabling CP for package %d\n", packageId)
+				fmt.Printf("enabling CP for package %d\n", packageId)
 
 				err = sst.EnableCP(info)
 				if err != nil {
 					return err
 				}
 			} else if disable {
-				fmt.Printf("Disabling CP for package %d\n", packageId)
+				fmt.Printf("disabling CP for package %d\n", packageId)
 
 				err = sst.DisableCP(info)
 				if err != nil {

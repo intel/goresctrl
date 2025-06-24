@@ -364,7 +364,7 @@ func enableBF(info *SstPackageInfo) error {
 // EnableBF enables SST-BF and sets it up properly
 func EnableBF(pkgs ...int) error {
 	if ok, err := isHWPEnabled(); err != nil {
-		return fmt.Errorf("Failed to determine if HWP is enabled")
+		return fmt.Errorf("failed to determine if HWP is enabled")
 	} else if !ok {
 		return fmt.Errorf("HWP is not enabled")
 	}
@@ -518,7 +518,7 @@ func writeClosPmQosConfig(info *SstPackageInfo, cpu utils.ID, enable bool) error
 
 func enableCP(info *SstPackageInfo, cpu utils.ID) (uint32, error) {
 	if err := writeClosPmQosConfig(info, cpu, true); err != nil {
-		return 0, fmt.Errorf("Cannot set Clos status: %v", err)
+		return 0, fmt.Errorf("cannot set Clos status: %v", err)
 	}
 
 	return writePMConfig(info, cpu, true)
@@ -526,7 +526,7 @@ func enableCP(info *SstPackageInfo, cpu utils.ID) (uint32, error) {
 
 func disableCP(info *SstPackageInfo, cpu utils.ID) (uint32, error) {
 	if err := writeClosPmQosConfig(info, cpu, false); err != nil {
-		return 0, fmt.Errorf("Cannot set Clos status: %v", err)
+		return 0, fmt.Errorf("cannot set Clos status: %v", err)
 	}
 
 	return writePMConfig(info, cpu, false)
@@ -563,7 +563,7 @@ func ConfigureCP(info *SstPackageInfo, priority int, cpu2clos *ClosCPUSet) error
 	}
 
 	if priority < 0 || priority > 1 {
-		return fmt.Errorf("Invalid CP priority value %d (valid 0 or 1)", priority)
+		return fmt.Errorf("invalid CP priority value %d (valid 0 or 1)", priority)
 	}
 
 	if info.ClosCPUInfo == nil {
@@ -601,31 +601,31 @@ func ClosSetup(info *SstPackageInfo, clos int, closInfo *SstClosInfo) error {
 	}
 
 	if clos < 0 || clos >= NumClos {
-		return fmt.Errorf("Invalid Clos value (%d)", clos)
+		return fmt.Errorf("invalid Clos value (%d)", clos)
 	}
 
 	if closInfo.MinFreq < 0 || closInfo.MinFreq > 255 {
-		return fmt.Errorf("Invalid min freq (%d)", closInfo.MinFreq)
+		return fmt.Errorf("invalid min freq (%d)", closInfo.MinFreq)
 	}
 
 	if closInfo.MaxFreq < 0 || closInfo.MaxFreq > 255 {
-		return fmt.Errorf("Invalid max freq (%d)", closInfo.MaxFreq)
+		return fmt.Errorf("invalid max freq (%d)", closInfo.MaxFreq)
 	}
 
 	if closInfo.MinFreq > closInfo.MaxFreq {
-		return fmt.Errorf("Min freq %d must be smaller than max freq %d", closInfo.MinFreq, closInfo.MaxFreq)
+		return fmt.Errorf("min freq %d must be smaller than max freq %d", closInfo.MinFreq, closInfo.MaxFreq)
 	}
 
 	if closInfo.DesiredFreq < 0 || closInfo.DesiredFreq > 255 {
-		return fmt.Errorf("Invalid value %d for desired freq", closInfo.DesiredFreq)
+		return fmt.Errorf("invalid value %d for desired freq", closInfo.DesiredFreq)
 	}
 
 	if closInfo.EPP < 0 || closInfo.EPP > 15 {
-		return fmt.Errorf("Invalid value %d for EPP", closInfo.EPP)
+		return fmt.Errorf("invalid value %d for EPP", closInfo.EPP)
 	}
 
 	if closInfo.ProportionalPriority < 0 || closInfo.ProportionalPriority > 15 {
-		return fmt.Errorf("Invalid value %d for proportionalPriority", closInfo.ProportionalPriority)
+		return fmt.Errorf("invalid value %d for proportionalPriority", closInfo.ProportionalPriority)
 	}
 
 	info.ClosInfo[clos] = *closInfo
@@ -690,7 +690,7 @@ func DisableCP(info *SstPackageInfo) error {
 	}
 
 	if info.TFEnabled {
-		return fmt.Errorf("SST TF still enabled, disable it first.")
+		return fmt.Errorf("SST TF still enabled, disable it first")
 	}
 
 	rsp, err := disableCP(info, info.pkg.cpus[0])

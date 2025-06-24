@@ -42,10 +42,10 @@ var examples string = `Examples:
 
 func usage() {
 	flag.CommandLine.SetOutput(os.Stdout)
-	fmt.Fprintln(flag.CommandLine.Output(), "blockio - demo application for goresctrl/pkg/blockio API")
-	fmt.Fprintln(flag.CommandLine.Output(), "Usage: blockio -config=FILE -class=NAME [-cgroup=CGROUP]")
+	fmt.Fprintln(flag.CommandLine.Output(), "blockio - demo application for goresctrl/pkg/blockio API") // nolint:errcheck
+	fmt.Fprintln(flag.CommandLine.Output(), "Usage: blockio -config=FILE -class=NAME [-cgroup=CGROUP]") // nolint:errcheck
 	flag.PrintDefaults()
-	fmt.Fprint(flag.CommandLine.Output(), examples)
+	fmt.Fprint(flag.CommandLine.Output(), examples) // nolint:errcheck
 }
 
 func errorExit(format string, args ...interface{}) {

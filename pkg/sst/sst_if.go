@@ -51,7 +51,7 @@ func isstIoctl(ioctl uintptr, req uintptr) error {
 	if err != nil {
 		return fmt.Errorf("failed to open isst device %q: %v", devPath, err)
 	}
-	defer f.Close()
+	defer f.Close() // nolint:errcheck
 
 	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(f.Fd()), ioctl, req); errno != 0 {
 		return errno
@@ -66,7 +66,7 @@ func isstIoctl(ioctl uintptr, req uintptr) error {
 // is based on APIC.
 func getCPUMapping(cpu utils.ID) (utils.ID, error) {
 	if cpu < 0 || cpu > math.MaxUint32 {
-		return utils.Unknown, fmt.Errorf("Invalid CPU number %d", cpu)
+		return utils.Unknown, fmt.Errorf("invalid CPU number %d", cpu)
 	}
 
 	req := isstIfCPUMaps{
@@ -86,7 +86,7 @@ func getCPUMapping(cpu utils.ID) (utils.ID, error) {
 // sendMboxCmd sends one mailbox command to PUNIT
 func sendMboxCmd(cpu utils.ID, cmd uint16, subCmd uint16, parameter uint32, reqData uint32) (uint32, error) {
 	if cpu < 0 || cpu > math.MaxUint32 {
-		return 0, fmt.Errorf("Invalid CPU number %d", cpu)
+		return 0, fmt.Errorf("invalid CPU number %d", cpu)
 	}
 
 	req := isstIfMboxCmds{
@@ -104,7 +104,7 @@ func sendMboxCmd(cpu utils.ID, cmd uint16, subCmd uint16, parameter uint32, reqD
 
 	sstlog.Debugf("MBOX SEND cpu: %d cmd: %#02x sub: %#02x data: %#x", cpu, cmd, subCmd, reqData)
 	if err := isstIoctl(ISST_IF_MBOX_COMMAND, uintptr(unsafe.Pointer(&req))); err != nil {
-		return 0, fmt.Errorf("Mbox command failed with %v", err)
+		return 0, fmt.Errorf("mbox command failed with %v", err)
 	}
 	sstlog.Debugf("MBOX RECV data: %#x", req.Mbox_cmd[0].Resp_data)
 
@@ -114,7 +114,7 @@ func sendMboxCmd(cpu utils.ID, cmd uint16, subCmd uint16, parameter uint32, reqD
 // sendMMIOCmd sends one MMIO command to PUNIT
 func sendMMIOCmd(cpu utils.ID, reg uint32, value uint32, doWrite bool) (uint32, error) {
 	if cpu < 0 || cpu > math.MaxUint32 {
-		return 0, fmt.Errorf("Invalid CPU number %d", cpu)
+		return 0, fmt.Errorf("invalid CPU number %d", cpu)
 	}
 
 	var ReadWrite uint32
