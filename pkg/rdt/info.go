@@ -299,7 +299,7 @@ func getResctrlMountInfo() (string, map[string]struct{}, error) {
 	if err != nil {
 		return "", mountOptions, err
 	}
-	defer f.Close()
+	defer f.Close() // nolint:errcheck
 
 	s := bufio.NewScanner(f)
 	for s.Scan() {
