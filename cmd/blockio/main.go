@@ -40,12 +40,13 @@ var examples string = `Examples:
     $ blockio -config sample.cfg -class nolimit -cgroup user.slice/mygroup
 `
 
+// nolint:errcheck
 func usage() {
 	flag.CommandLine.SetOutput(os.Stdout)
-	fmt.Fprintln(flag.CommandLine.Output(), "blockio - demo application for goresctrl/pkg/blockio API") // nolint:errcheck
-	fmt.Fprintln(flag.CommandLine.Output(), "Usage: blockio -config=FILE -class=NAME [-cgroup=CGROUP]") // nolint:errcheck
+	fmt.Fprintln(flag.CommandLine.Output(), "blockio - demo application for goresctrl/pkg/blockio API")
+	fmt.Fprintln(flag.CommandLine.Output(), "Usage: blockio -config=FILE -class=NAME [-cgroup=CGROUP]")
 	flag.PrintDefaults()
-	fmt.Fprint(flag.CommandLine.Output(), examples) // nolint:errcheck
+	fmt.Fprint(flag.CommandLine.Output(), examples)
 }
 
 func errorExit(format string, args ...interface{}) {
