@@ -31,9 +31,9 @@ type collector struct {
 }
 
 // NewCollector creates new Prometheus collector of RDT metrics
-func NewCollector() (prometheus.Collector, error) {
+func NewCollector() prometheus.Collector {
 	c := &collector{descriptors: make(map[string]*prometheus.Desc)}
-	return c, nil
+	return c
 }
 
 // RegisterCustomPrometheusLabels registers monitor group annotations to be
