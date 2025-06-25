@@ -18,13 +18,11 @@ package rdt
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestContainerClassFromAnnotations(t *testing.T) {
-	mockRdt := &control{
-		classes: make(map[string]*ctrlGroup),
-	}
-
 	containerName := "test-container"
 	containerAnnotations := map[string]string{}
 	podAnnotations := map[string]string{}
@@ -57,21 +55,27 @@ func TestContainerClassFromAnnotations(t *testing.T) {
 	tc(true, "")
 
 	// Mock configured rdt which enables the functionality
-	rdt = mockRdt
+	mockFs, err := newMockResctrlFs(t, "resctrl.l2", "")
+	require.NoError(t, err, "failed to set up mock resctrl fs")
+	defer mockFs.delete()
+
+	require.NoError(t, Initialize(""), "rdt initialization failed")
 
 	// Should fail with an empty set of classes
 	tc(true, "")
 
 	// Should succeed when the class exists but no configuration has been set ("discovery mode")
-	mockRdt.classes = map[string]*ctrlGroup{"": nil, "class-1": nil, "class-2": nil, "class-3": nil}
+	require.NoError(t, mockFs.createCtrlGroup("class-1"))
+	require.NoError(t, mockFs.createCtrlGroup("class-2"))
+	require.NoError(t, mockFs.createCtrlGroup("class-3"))
 	tc(false, "class-1")
 
 	// Should succeed with default class config
-	mockRdt.conf.Classes = classSet{"class-1": &classConfig{}, "class-2": &classConfig{}, "class-3": &classConfig{}}
+	rdt.conf.Classes = classSet{"class-1": &classConfig{}, "class-2": &classConfig{}, "class-3": &classConfig{}}
 	tc(false, "class-1")
 
 	// Should fail when container annotation has been denied in class ocnfig
-	mockRdt.conf.Classes["class-1"].Kubernetes.DenyContainerAnnotation = true
+	rdt.conf.Classes["class-1"].Kubernetes.DenyContainerAnnotation = true
 	tc(true, "")
 
 	// Test invalid class name
@@ -85,7 +89,7 @@ func TestContainerClassFromAnnotations(t *testing.T) {
 	tc(false, "class-2")
 
 	// Should fail when pod annotations for the class are denied
-	mockRdt.conf.Classes["class-2"].Kubernetes.DenyPodAnnotation = true
+	rdt.conf.Classes["class-2"].Kubernetes.DenyPodAnnotation = true
 	tc(true, "")
 
 	//
@@ -95,7 +99,7 @@ func TestContainerClassFromAnnotations(t *testing.T) {
 	tc(false, "class-3")
 
 	// Should fail when pod annotations for the class are denied
-	mockRdt.conf.Classes["class-3"].Kubernetes.DenyPodAnnotation = true
+	rdt.conf.Classes["class-3"].Kubernetes.DenyPodAnnotation = true
 	tc(true, "")
 
 	//

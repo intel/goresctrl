@@ -102,7 +102,7 @@ func (c *collector) describeL3(feature string) *prometheus.Desc {
 }
 
 func (c *collector) collectMonGroupMetrics(ch chan<- prometheus.Metric, mg MonGroup) {
-	annotations := mg.GetAnnotations()
+	annotations := map[string]string{} // mg.GetAnnotations()
 	customLabelValues := make([]string, len(customLabels))
 	for i, name := range customLabels {
 		customLabelValues[i] = annotations[name]
