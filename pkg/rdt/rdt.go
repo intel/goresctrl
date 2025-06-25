@@ -71,7 +71,10 @@ type control struct {
 	resctrlGroupPrefix string
 	conf               config
 	rawConf            Config
-	classes            map[string]*ctrlGroup
+
+	// Registry of ctrl/mon group annotations used for custom prometheus metrics labels.
+	// We keep them here so that after Initialize() the annotations are cleared.
+	annotations map[string]groupAnnotations
 }
 
 var log *slog.Logger = slog.Default()
@@ -91,6 +94,9 @@ func SetLogger(l *slog.Logger) {
 
 // Initialize detects RDT from the system and initializes control interface of
 // the package.
+//
+// NOTE: Monitoring group annotations (used for custom prometheus metrics
+// labels) are lost on (re-)initialization.
 func Initialize(resctrlGroupPrefix string) error {
 	var err error
 
@@ -103,12 +109,15 @@ func Initialize(resctrlGroupPrefix string) error {
 		return err
 	}
 
-	r := &control{Logger: log, resctrlGroupPrefix: resctrlGroupPrefix}
+	r := &control{
+		Logger:             log,
+		resctrlGroupPrefix: resctrlGroupPrefix,
+		annotations:        make(map[string]groupAnnotations),
+	}
 
-	// NOTE: we lose monitoring group annotations (i.e. prometheus metrics
-	// labels) on re-init
-	if r.classes, err = r.classesFromResctrlFs(); err != nil {
-		return fmt.Errorf("failed to initialize classes from resctrl fs: %v", err)
+	// Sanity check that we're able to read the groups from the resctrl filesystem
+	if _, err = r.classesFromResctrlFs(); err != nil {
+		return fmt.Errorf("failed to read classes from resctrl fs: %v", err)
 	}
 
 	rdt = r
@@ -116,12 +125,12 @@ func Initialize(resctrlGroupPrefix string) error {
 	return nil
 }
 
-// DiscoverClasses discovers existing classes from the resctrl filesystem.
-// Makes it possible to discover gropus with another prefix than was set with
-// Initialize(). The original prefix is still used for monitoring groups.
-func DiscoverClasses(resctrlGroupPrefix string) error {
+// SetResctrlGroupPrefix changes the prefix from the one that was set with
+// Initialize().
+func SetResctrlGroupPrefix(resctrlGroupPrefix string) error {
 	if rdt != nil {
-		return rdt.discoverFromResctrl(resctrlGroupPrefix)
+		rdt.resctrlGroupPrefix = resctrlGroupPrefix
+		return nil
 	}
 	return fmt.Errorf("rdt not initialized")
 }
@@ -165,7 +174,11 @@ func SetConfigFromFile(path string, force bool) error {
 // GetClass returns one RDT class.
 func GetClass(name string) (CtrlGroup, bool) {
 	if rdt != nil {
-		return rdt.getClass(name)
+		if cls, err := rdt.getClass(name); err != nil {
+			log.Error("failed to get RDT class", "name", name, "error", err)
+		} else {
+			return cls, true
+		}
 	}
 	return nil, false
 }
@@ -173,7 +186,15 @@ func GetClass(name string) (CtrlGroup, bool) {
 // GetClasses returns all available RDT classes.
 func GetClasses() []CtrlGroup {
 	if rdt != nil {
-		return rdt.getClasses()
+		if classes, err := rdt.getClasses(); err != nil {
+			log.Error("failed to get RDT classes", "error", err)
+		} else {
+			ret := make([]CtrlGroup, len(classes))
+			for i, v := range classes {
+				ret[i] = v
+			}
+			return ret
+		}
 	}
 	return []CtrlGroup{}
 }
@@ -201,20 +222,27 @@ func IsQualifiedClassName(name string) bool {
 	return name == RootClassName || (len(name) < 4096 && name != "." && name != ".." && !strings.ContainsAny(name, "/\n"))
 }
 
-func (c *control) getClass(name string) (CtrlGroup, bool) {
-	cls, ok := c.classes[unaliasClassName(name)]
-	return cls, ok
+func (c *control) getClass(name string) (*ctrlGroup, error) {
+	cls, err := c.classFromResctrlFs(name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get class %q from resctrl fs: %w", name, err)
+	}
+	return cls, nil
 }
 
-func (c *control) getClasses() []CtrlGroup {
-	ret := make([]CtrlGroup, 0, len(c.classes))
+func (c *control) getClasses() ([]*ctrlGroup, error) {
+	classes, err := c.classesFromResctrlFs()
+	if err != nil {
+		return []*ctrlGroup{}, fmt.Errorf("failed to get classes from resctrl fs: %w", err)
+	}
 
-	for _, v := range c.classes {
+	ret := make([]*ctrlGroup, 0, len(classes))
+	for _, v := range classes {
 		ret = append(ret, v)
 	}
 	sort.Slice(ret, func(i, j int) bool { return ret[i].Name() < ret[j].Name() })
 
-	return ret
+	return ret, nil
 }
 
 func (c *control) monSupported() bool {
@@ -265,7 +293,7 @@ func (c *control) configureResctrl(conf config, force bool) error {
 		return err
 	}
 
-	for name, cls := range classesFromFs {
+	for _, cls := range classesFromFs {
 		if _, ok := conf.Classes[cls.name]; !isRootClass(cls.name) && !ok {
 			if !force {
 				tasks, err := cls.GetPids()
@@ -281,69 +309,21 @@ func (c *control) configureResctrl(conf config, force bool) error {
 			if err != nil {
 				return fmt.Errorf("failed to remove resctrl group %q: %v", cls.relPath(""), err)
 			}
-
-			delete(c.classes, name)
 		}
-	}
-
-	for name, cls := range c.classes {
-		if _, ok := conf.Classes[cls.name]; !ok || cls.prefix != c.resctrlGroupPrefix {
-			if !isRootClass(cls.name) {
-				log.Debug("dropping stale class", "name", cls.Name(), "path", cls.path(""))
-				delete(c.classes, name)
-			}
-		}
-	}
-
-	if _, ok := c.classes[RootClassName]; !ok {
-		log.Warn("root class missing from runtime data, re-adding...")
-		c.classes[RootClassName] = classesFromFs[RootClassName]
 	}
 
 	// Try to apply given configuration
 	for name, class := range conf.Classes {
-		if _, ok := c.classes[name]; !ok {
-			cg, err := newCtrlGroup(c.resctrlGroupPrefix, c.resctrlGroupPrefix, name)
+		cg, ok := classesFromFs[name]
+		if !ok {
+			cg, err = newCtrlGroup(c.resctrlGroupPrefix, c.resctrlGroupPrefix, name)
 			if err != nil {
 				return err
 			}
-			c.classes[name] = cg
 		}
 		partition := conf.Partitions[class.Partition]
-		if err := c.classes[name].configure(name, class, partition, conf.Options); err != nil {
+		if err := cg.configure(name, class, partition, conf.Options); err != nil {
 			return err
-		}
-	}
-
-	if err := c.pruneMonGroups(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (c *control) discoverFromResctrl(prefix string) error {
-	c.Debug("running class discovery from resctrl filesystem", "prefix", prefix)
-
-	classesFromFs, err := c.classesFromResctrlFsPrefix(prefix)
-	if err != nil {
-		return err
-	}
-
-	// Drop stale classes
-	for name, cls := range c.classes {
-		if _, ok := classesFromFs[cls.name]; !ok || cls.prefix != prefix {
-			if !isRootClass(cls.name) {
-				log.Debug("dropping stale class", "name", cls.Name(), "path", cls.path(""))
-				delete(c.classes, name)
-			}
-		}
-	}
-
-	for name, cls := range classesFromFs {
-		if _, ok := c.classes[name]; !ok {
-			c.classes[name] = cls
-			log.Debug("adding discovered class", "name", cls.Name(), "path", cls.path(""))
 		}
 	}
 
@@ -364,12 +344,6 @@ func (c *control) classesFromResctrlFsPrefix(prefix string) (map[string]*ctrlGro
 		return nil, err
 	} else {
 		for _, n := range g {
-			if prefix != c.resctrlGroupPrefix &&
-				strings.HasPrefix(n, c.resctrlGroupPrefix) &&
-				strings.HasPrefix(c.resctrlGroupPrefix, prefix) {
-				// Skip groups in the standard namespace
-				continue
-			}
 			names = append(names, n[len(prefix):])
 		}
 	}
@@ -386,8 +360,33 @@ func (c *control) classesFromResctrlFsPrefix(prefix string) (map[string]*ctrlGro
 	return classes, nil
 }
 
+func (c *control) classFromResctrlFs(name string) (*ctrlGroup, error) {
+	return c.classFromResctrlFsPrefix(c.resctrlGroupPrefix, name)
+}
+
+func (c *control) classFromResctrlFsPrefix(prefix, name string) (*ctrlGroup, error) {
+	path := info.resctrlPath
+	if !isRootClass(name) {
+		path = filepath.Join(path, prefix+name)
+	}
+	if !isResctrlGroup(path) {
+		return nil, fmt.Errorf("resctrl group not found for class %q (%q)", name, path)
+	}
+
+	g, err := newCtrlGroup(prefix, c.resctrlGroupPrefix, name)
+	if err != nil {
+		return nil, err
+	}
+
+	return g, nil
+}
+
 func (c *control) pruneMonGroups() error {
-	for name, cls := range c.classes {
+	classes, err := c.getClasses()
+	if err != nil {
+		return err
+	}
+	for name, cls := range classes {
 		if err := cls.pruneMonGroups(); err != nil {
 			return fmt.Errorf("failed to prune stale monitoring groups of %q: %v", name, err)
 		}
@@ -418,6 +417,25 @@ func (c *control) cmdError(origErr error) error {
 	return origErr
 }
 
+func (c *control) setAnnotations(g *resctrlGroup, annotations map[string]string) {
+	c.annotations[annotationKey(g)] = annotations
+}
+
+func (c *control) getAnnotations(g *resctrlGroup) map[string]string {
+	return c.annotations[annotationKey(g)]
+}
+func (c *control) deleteAnnotations(g *resctrlGroup) {
+	delete(c.annotations, annotationKey(g))
+}
+
+func annotationKey(g *resctrlGroup) string {
+	// we use the dirnames to avoid ambiguity caused by the group prefix (if changed)
+	if g.parent != nil {
+		return g.parent.dirName() + "/" + g.dirName()
+	}
+	return g.dirName()
+}
+
 func resctrlGroupsFromFs(prefix string, path string) ([]string, error) {
 	files, err := os.ReadDir(path)
 	if err != nil {
@@ -427,13 +445,18 @@ func resctrlGroupsFromFs(prefix string, path string) ([]string, error) {
 	grps := make([]string, 0, len(files))
 	for _, file := range files {
 		filename := file.Name()
-		if strings.HasPrefix(filename, prefix) {
-			if s, err := os.Stat(filepath.Join(path, filename, "tasks")); err == nil && !s.IsDir() {
-				grps = append(grps, filename)
-			}
+		if strings.HasPrefix(filename, prefix) && isResctrlGroup(filepath.Join(path, filename)) {
+			grps = append(grps, filename)
 		}
 	}
 	return grps, nil
+}
+
+func isResctrlGroup(path string) bool {
+	if s, err := os.Stat(filepath.Join(path, "tasks")); err == nil && !s.IsDir() {
+		return true
+	}
+	return false
 }
 
 func isRootClass(name string) bool {

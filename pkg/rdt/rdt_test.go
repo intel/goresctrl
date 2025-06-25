@@ -18,10 +18,12 @@ package rdt
 
 import (
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -29,6 +31,8 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/intel/goresctrl/pkg/testutils"
 	"github.com/intel/goresctrl/pkg/utils"
@@ -69,13 +73,23 @@ func newMockResctrlFs(t *testing.T, name, mountOpts string) (*mockResctrlFs, err
 }
 
 func (m *mockResctrlFs) delete() {
-	if err := os.RemoveAll(m.baseDir); err != nil {
-		m.t.Fatalf("failed to delete mock resctrl fs: %v", err)
+	if _, ok := os.LookupEnv("TEST_NOCLEAN"); !ok {
+		if err := os.RemoveAll(m.baseDir); err != nil {
+			m.t.Fatalf("failed to delete mock resctrl fs: %v", err)
+		}
 	}
 }
 
 func (m *mockResctrlFs) initMockMonGroup(class, name string) {
 	m.copyFromOrig(filepath.Join("mon_groups", "example"), filepath.Join(mockGroupPrefix+class, "mon_groups", mockGroupPrefix+name))
+}
+
+func (m *mockResctrlFs) createCtrlGroup(name string) error {
+	path := filepath.Join(m.baseDir, "resctrl", name)
+	if err := os.Mkdir(path, 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(path, "tasks"), []byte(""), 0644)
 }
 
 func (m *mockResctrlFs) copyFromOrig(relSrc, relDst string) {
@@ -102,9 +116,7 @@ func verifyTextFile(t *testing.T, path, content string) {
 	if err != nil {
 		t.Fatalf("failed to read %q: %v", path, err)
 	}
-	if string(data) != content {
-		t.Fatalf("unexpected content in %q\nexpected:\n  %q\nfound:\n  %q", path, content, data)
-	}
+	require.Equal(t, content, string(data))
 }
 
 func parseTestConfig(t *testing.T, data string) *Config {
@@ -113,6 +125,17 @@ func parseTestConfig(t *testing.T, data string) *Config {
 		t.Fatalf("failed to parse rdt config: %v", err)
 	}
 	return c
+}
+
+func mockResctrlGroupMkdir(path string, mode os.FileMode) error {
+	if err := os.MkdirAll(path, mode); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filepath.Join(path, "tasks"), os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return err
+	}
+	return f.Close()
 }
 
 // TestRdt tests the rdt public API, i.e. exported functionality of the package
@@ -174,7 +197,9 @@ partitions:
 		}
 	}
 
-	// Set group remove function so that mock groups can be removed
+	// Set group create and remove function so that mock groups have tasks file
+	// and they can be removed
+	groupCreateFunc = mockResctrlGroupMkdir
 	groupRemoveFunc = os.RemoveAll
 
 	//
@@ -266,24 +291,30 @@ partitions:
 	}
 
 	// Check that the path() and relPath() methods work correctly
-	if p := rdt.classes["Guaranteed"].path("foo"); p != filepath.Join(mockFs.baseDir, "resctrl", "goresctrl.Guaranteed", "foo") {
-		t.Errorf("path() returned wrong path %q", p)
-	}
-	if p := rdt.classes["Guaranteed"].relPath("foo"); p != filepath.Join("goresctrl.Guaranteed", "foo") {
-		t.Errorf("relPath() returned wrong path %q", p)
-	}
+	c, err := rdt.getClass("Guaranteed")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(mockFs.baseDir, "resctrl", "goresctrl.Guaranteed", "foo"), c.path("foo"))
+	assert.Equal(t, filepath.Join("goresctrl.Guaranteed", "foo"), c.relPath("foo"))
 
 	// Verify that ctrl groups are correctly configured
-	mockFs.verifyTextFile(rdt.classes["BestEffort"].relPath("schemata"),
+	c, err = rdt.getClass("BestEffort")
+	require.NoError(t, err)
+	mockFs.verifyTextFile(c.relPath("schemata"),
 		"L3:0=3f;1=3f;2=3f;3=3f\nMB:0=33;1=33;2=33;3=33\n")
-	mockFs.verifyTextFile(rdt.classes["Burstable"].relPath("schemata"),
+	c, err = rdt.getClass("Burstable")
+	require.NoError(t, err)
+	mockFs.verifyTextFile(c.relPath("schemata"),
 		"L3:0=ff;1=ff;2=ff;3=ff\nMB:0=66;1=66;2=66;3=66\n")
-	mockFs.verifyTextFile(rdt.classes["Guaranteed"].relPath("schemata"),
+	c, err = rdt.getClass("Guaranteed")
+	require.NoError(t, err)
+	mockFs.verifyTextFile(c.relPath("schemata"),
 		"L3:0=fff00;1=fff00;2=fff00;3=fff00\nMB:0=100;1=100;2=100;3=100\n")
 
 	// Verify that existing goresctrl monitor groups were removed
 	for _, cls := range []string{RootClassName, "Guaranteed"} {
-		files, _ := os.ReadDir(rdt.classes[cls].path("mon_groups"))
+		c, err := rdt.getClass(cls)
+		require.NoError(t, err)
+		files, _ := os.ReadDir(c.path("mon_groups"))
 		for _, f := range files {
 			if strings.HasPrefix(mockGroupPrefix, f.Name()) {
 				t.Errorf("unexpected monitor group found %q", f.Name())
@@ -311,7 +342,9 @@ partitions:
 		t.Errorf("GetPids() returned %s, expected %s", p, pids)
 	}
 
-	mockFs.verifyTextFile(rdt.classes["Guaranteed"].relPath("tasks"), "10\n11\n12\n")
+	c, err = rdt.getClass("Guaranteed")
+	require.NoError(t, err)
+	mockFs.verifyTextFile(c.relPath("tasks"), "10\n11\n12\n")
 
 	// Verify MonSupported and GetMonFeatures
 	if !MonSupported() {
@@ -349,13 +382,18 @@ partitions:
 
 	verifyGroupNames(cls.GetMonGroups(), []string{"predefined_group_live", mgName})
 
-	mgPath := rdt.classes["Guaranteed"].path("mon_groups", "goresctrl."+mgName)
+	c, err = rdt.getClass("Guaranteed")
+	require.NoError(t, err)
+	mgPath := c.path("mon_groups", "goresctrl."+mgName)
 	if _, err := os.Stat(mgPath); err != nil {
 		t.Errorf("mon group directory not found: %v", err)
 	}
 
 	// Check that the monGroup.path() and relPath() methods work correctly
-	mgi := rdt.classes["Guaranteed"].monGroups[mgName]
+	c, err = rdt.getClass("Guaranteed")
+	require.NoError(t, err)
+	mgi, err := c.monGroupFromResctrlFs(mgName)
+	require.NoError(t, err)
 	if p := mgi.path("foo"); p != filepath.Join(mockFs.baseDir, "resctrl", "goresctrl.Guaranteed", "mon_groups", "goresctrl."+mgName, "foo") {
 		t.Errorf("path() returned wrong path %q", p)
 	}
@@ -401,7 +439,11 @@ partitions:
 	} else if !cmp.Equal(p, pids) {
 		t.Errorf("MonGroup.GetPids() returned %s, expected %s", p, pids)
 	}
-	mockFs.verifyTextFile(rdt.classes["Guaranteed"].monGroups[mgName].relPath("tasks"), "10\n")
+	c, err = rdt.getClass("Guaranteed")
+	require.NoError(t, err)
+	mgi, err = c.monGroupFromResctrlFs(mgName)
+	require.NoError(t, err)
+	mockFs.verifyTextFile(mgi.relPath("tasks"), "10\n")
 
 	// Verify monitoring functionality
 	expected := MonData{
@@ -434,23 +476,20 @@ partitions:
 	}
 
 	//
-	// 3. Test discovery
+	// 3. Test changing prefix
 	//
-	if err := DiscoverClasses(""); err != nil {
-		t.Fatalf("DiscoverClasses() failed unexpectedly")
-	}
-	classes = GetClasses()
-	verifyGroupNames(classes, []string{"Guaranteed", "non_goresctrl.Group", RootClassName})
+	require.NoError(t, SetResctrlGroupPrefix(""))
 
-	if err := DiscoverClasses("non_goresctrl."); err != nil {
-		t.Fatalf("DiscoverClasses() failed unexpectedly")
-	}
+	classes = GetClasses()
+	verifyGroupNames(classes, []string{"Guaranteed", "goresctrl.BestEffort", "goresctrl.Burstable", "goresctrl.Guaranteed", "non_goresctrl.Group", RootClassName})
+
+	require.NoError(t, SetResctrlGroupPrefix("non_goresctrl."))
+
 	classes = GetClasses()
 	verifyGroupNames(classes, []string{"Group", RootClassName})
 
-	if err := DiscoverClasses("non-existing-prefix"); err != nil {
-		t.Fatalf("DiscoverClasses() failed unexpectedly")
-	}
+	require.NoError(t, SetResctrlGroupPrefix("non-existing-prefix."))
+
 	classes = GetClasses()
 	verifyGroupNames(classes, []string{RootClassName})
 }
@@ -1463,26 +1502,26 @@ partitions:
 			if s.mb != "" {
 				expected += "MB:" + s.mb + "\n"
 			}
-			if c, ok := rdt.classes[n]; !ok {
-				t.Fatalf("verifySchemata: class %q does not exists in %v", n, rdt.classes)
-			} else {
-				verifyTextFile(t, c.path("schemata"), expected)
-			}
+			c, err := rdt.getClass(n)
+			require.NoError(t, err, "class %q not found", n)
+			verifyTextFile(t, c.path("schemata"), expected)
 		}
 
-		if len(tc.schemata) != len(rdt.classes) {
-			var a, b []string
-			for n := range tc.schemata {
-				a = append(a, n)
-			}
-			for n := range rdt.classes {
-				b = append(b, n)
-			}
-			t.Fatalf("unexpected set of classes: expected %v, got %v", a, b)
+		classes, err := rdt.getClasses()
+		require.NoError(t, err, "failed to get classes")
+
+		names := make([]string, len(classes))
+		for i, c := range classes {
+			names[i] = c.Name()
 		}
+		expectedNames := slices.Sorted(maps.Keys(tc.schemata))
+
+		require.Equal(t, expectedNames, names)
 	}
 
-	// Set group remove function so that mock groups can be removed
+	// Set group create and remove function so that mock groups have tasks file
+	// and they can be removed
+	groupCreateFunc = mockResctrlGroupMkdir
 	groupRemoveFunc = os.RemoveAll
 
 	for _, tc := range tcs {

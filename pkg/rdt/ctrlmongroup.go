@@ -27,8 +27,11 @@ import (
 	"syscall"
 )
 
-// Function for removing resctrl groups from the filesystem. This is
+type groupAnnotations = map[string]string
+
+// Functions for creating and removing resctrl groups from the filesystem. These are
 // configurable because of unit tests.
+var groupCreateFunc func(string, os.FileMode) error = os.Mkdir
 var groupRemoveFunc func(string) error = os.Remove
 
 // CtrlGroup defines the interface of one goresctrl managed RDT class. It maps
@@ -66,6 +69,12 @@ type ResctrlGroup interface {
 
 	// GetMonData retrieves the monitoring data of the group.
 	GetMonData() MonData
+
+	// GetAnnotations returns the annotations associated with the group
+	GetAnnotations() map[string]string
+
+	// Private methods for internal use
+	dirName() string
 }
 
 // MonGroup represents the interface to a RDT monitoring group. It maps to one
@@ -75,9 +84,6 @@ type MonGroup interface {
 
 	// Parent returns the CtrlGroup under which the monitoring group exists.
 	Parent() CtrlGroup
-
-	// GetAnnotations returns the annotations stored to the monitoring group.
-	GetAnnotations() map[string]string
 }
 
 // MonData contains monitoring stats of one monitoring group.
@@ -103,13 +109,10 @@ type ctrlGroup struct {
 	resctrlGroup
 
 	monPrefix string
-	monGroups map[string]*monGroup
 }
 
 type monGroup struct {
 	resctrlGroup
-
-	annotations map[string]string
 }
 
 type resctrlGroup struct {
@@ -124,55 +127,51 @@ func newCtrlGroup(prefix, monPrefix, name string) (*ctrlGroup, error) {
 		monPrefix:    monPrefix,
 	}
 
-	if err := os.Mkdir(cg.path(""), 0755); err != nil && !os.IsExist(err) {
+	if err := groupCreateFunc(cg.path(""), 0755); err != nil && !os.IsExist(err) {
 		return nil, err
-	}
-
-	var err error
-	cg.monGroups, err = cg.monGroupsFromResctrlFs()
-	if err != nil {
-		return nil, fmt.Errorf("error when retrieving existing monitor groups: %v", err)
 	}
 
 	return cg, nil
 }
 
 func (c *ctrlGroup) CreateMonGroup(name string, annotations map[string]string) (MonGroup, error) {
-	if mg, ok := c.monGroups[name]; ok {
-		return mg, nil
-	}
-
 	log.Debug("adding monitoring group", "class", c.Name(), "name", name)
-	mg, err := newMonGroup(c.monPrefix, name, c, annotations)
+	mg, err := newMonGroup(c.monPrefix, name, c)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new monitoring group %q: %v", name, err)
 	}
 
-	c.monGroups[name] = mg
+	// Store annotations in the reqistry
+	rdt.setAnnotations(&mg.resctrlGroup, annotations)
 
 	return mg, err
 }
 
 func (c *ctrlGroup) DeleteMonGroup(name string) error {
-	mg, ok := c.monGroups[name]
-	if !ok {
-		log.Warn("trying to delete non-existent mon group", "class", c.Name(), "name", name, "path", mg.path(""))
-		return nil
+	mg, err := c.monGroupFromResctrlFs(name)
+	if err != nil {
+		return err
 	}
 
-	log.Debug("deleting monitoring group", "class", c.Name(), "name", name)
-	if err := groupRemoveFunc(mg.path("")); err != nil {
-		return fmt.Errorf("failed to remove monitoring group %q: %v", mg.relPath(""), err)
-	}
+	// Drop annotations from the reqistry
+	rdt.deleteAnnotations(&mg.resctrlGroup)
 
-	delete(c.monGroups, name)
+	log.Debug("deleting monitoring group", "class", c.Name(), "name", mg.Name(), "path", mg.relPath(""))
+	if err := mg.rmdir(); err != nil {
+		return fmt.Errorf("failed to remove monitoring group %q (%s): %v", name, mg.relPath(""), err)
+	}
 
 	return nil
 }
 
 func (c *ctrlGroup) DeleteMonGroups() error {
-	for name := range c.monGroups {
-		if err := c.DeleteMonGroup(name); err != nil {
+	grps, err := c.monGroupsFromResctrlFs()
+	if err != nil {
+		return err
+	}
+	for _, mg := range grps {
+		log.Debug("deleting monitoring group", "class", c.Name(), "name", mg.Name(), "path", mg.relPath(""))
+		if err := mg.rmdir(); err != nil {
 			return err
 		}
 	}
@@ -180,18 +179,24 @@ func (c *ctrlGroup) DeleteMonGroups() error {
 }
 
 func (c *ctrlGroup) GetMonGroup(name string) (MonGroup, bool) {
-	mg, ok := c.monGroups[name]
-	return mg, ok
+	mg, err := c.monGroupFromResctrlFs(name)
+	if err != nil {
+		log.Error("failed to get monitoring group from resctrl filesystem", "className", c.Name(), "error", err)
+		return nil, false
+	}
+	return mg, true
 }
 
 func (c *ctrlGroup) GetMonGroups() []MonGroup {
-	ret := make([]MonGroup, 0, len(c.monGroups))
-
-	for _, v := range c.monGroups {
-		ret = append(ret, v)
+	grps, err := c.monGroupsFromResctrlFs()
+	if err != nil {
+		log.Error("failed to get monitoring groups from resctrl filesystem", "className", c.Name(), "error", err)
+		return nil
 	}
-	sort.Slice(ret, func(i, j int) bool { return ret[i].Name() < ret[j].Name() })
-
+	ret := make([]MonGroup, len(grps))
+	for i, mg := range grps {
+		ret[i] = mg
+	}
 	return ret
 }
 
@@ -249,33 +254,54 @@ func (c *ctrlGroup) configure(name string, class *classConfig,
 	return nil
 }
 
-func (c *ctrlGroup) monGroupsFromResctrlFs() (map[string]*monGroup, error) {
+func (c *ctrlGroup) monGroupsFromResctrlFs() ([]*monGroup, error) {
 	names, err := resctrlGroupsFromFs(c.monPrefix, c.path("mon_groups"))
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 
-	grps := make(map[string]*monGroup, len(names))
+	grps := make([]*monGroup, 0, len(names))
 	for _, name := range names {
 		name = name[len(c.monPrefix):]
-		mg, err := newMonGroup(c.monPrefix, name, c, nil)
+		mg, err := newMonGroup(c.monPrefix, name, c)
 		if err != nil {
 			return nil, err
 		}
-		grps[name] = mg
+		grps = append(grps, mg)
 	}
+
+	sort.Slice(grps, func(i, j int) bool { return grps[i].Name() < grps[j].Name() })
+
 	return grps, nil
+}
+
+func (c *ctrlGroup) monGroupFromResctrlFs(name string) (*monGroup, error) {
+	path := filepath.Join(c.path("mon_groups"), c.monPrefix+name)
+	if !isResctrlGroup(path) {
+		return nil, fmt.Errorf("resctrl group not found for monitoring group %q (%q)", name, path)
+	}
+
+	mg, err := newMonGroup(c.monPrefix, name, c)
+	if err != nil {
+		return nil, err
+	}
+
+	return mg, nil
 }
 
 // Remove empty monitoring groups
 func (c *ctrlGroup) pruneMonGroups() error {
-	for name, mg := range c.monGroups {
+	grps, err := c.monGroupsFromResctrlFs()
+	if err != nil {
+		return err
+	}
+	for _, mg := range grps {
 		pids, err := mg.GetPids()
 		if err != nil {
 			return fmt.Errorf("failed to get pids for monitoring group %q: %v", mg.relPath(""), err)
 		}
 		if len(pids) == 0 {
-			if err := c.DeleteMonGroup(name); err != nil {
+			if err := mg.rmdir(); err != nil {
 				return fmt.Errorf("failed to remove monitoring group %q: %v", mg.relPath(""), err)
 			}
 		}
@@ -337,6 +363,10 @@ func (r *resctrlGroup) GetMonData() MonData {
 	return m
 }
 
+func (r *resctrlGroup) GetAnnotations() map[string]string {
+	return rdt.getAnnotations(r)
+}
+
 func (r *resctrlGroup) getMonL3Data() (MonL3Data, error) {
 	files, err := os.ReadDir(r.path("mon_data"))
 	if err != nil {
@@ -394,30 +424,35 @@ func (r *resctrlGroup) getMonLeafData(path string) (MonLeafData, error) {
 
 func (r *resctrlGroup) relPath(elem ...string) string {
 	if r.parent == nil {
-		if r.name == RootClassName {
-			return filepath.Join(elem...)
-		}
-		return filepath.Join(append([]string{r.prefix + r.name}, elem...)...)
+		return filepath.Join(append([]string{r.dirName()}, elem...)...)
 	}
 	// Parent is only intended for MON groups - non-root CTRL groups are considered
 	// as peers to the root CTRL group (as they are in HW) and do not have a parent
-	return r.parent.relPath(append([]string{"mon_groups", r.prefix + r.name}, elem...)...)
+	return r.parent.relPath(append([]string{"mon_groups", r.dirName()}, elem...)...)
 }
 
 func (r *resctrlGroup) path(elem ...string) string {
 	return filepath.Join(info.resctrlPath, r.relPath(elem...))
 }
 
-func newMonGroup(prefix string, name string, parent *ctrlGroup, annotations map[string]string) (*monGroup, error) {
+func (r *resctrlGroup) rmdir() error {
+	return groupRemoveFunc(r.path(""))
+}
+
+func (r *resctrlGroup) dirName() string {
+	if r.name == RootClassName {
+		return ""
+	}
+	return r.prefix + r.name
+}
+
+func newMonGroup(prefix string, name string, parent *ctrlGroup) (*monGroup, error) {
 	mg := &monGroup{
 		resctrlGroup: resctrlGroup{prefix: prefix, name: name, parent: parent},
-		annotations:  make(map[string]string, len(annotations))}
-
-	if err := os.Mkdir(mg.path(""), 0755); err != nil && !os.IsExist(err) {
-		return nil, err
 	}
-	for k, v := range annotations {
-		mg.annotations[k] = v
+
+	if err := groupCreateFunc(mg.path(""), 0755); err != nil && !os.IsExist(err) {
+		return nil, err
 	}
 
 	return mg, nil
@@ -425,12 +460,4 @@ func newMonGroup(prefix string, name string, parent *ctrlGroup, annotations map[
 
 func (m *monGroup) Parent() CtrlGroup {
 	return m.parent
-}
-
-func (m *monGroup) GetAnnotations() map[string]string {
-	a := make(map[string]string, len(m.annotations))
-	for k, v := range m.annotations {
-		a[k] = v
-	}
-	return a
 }
