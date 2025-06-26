@@ -26,7 +26,7 @@ limitations under the License.
 //
 // Basic usage example:
 //
-//	rdt.SetLogger(logrus.New())
+//	rdt.SetLogger(slog.Default().WithGroup("rdt"))
 //
 //	if err := rdt.Initialize(""); err != nil {
 //		return fmt.Errorf("RDT not supported: %v", err)
@@ -46,7 +46,7 @@ package rdt
 
 import (
 	"fmt"
-	stdlog "log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -54,7 +54,6 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	grclog "github.com/intel/goresctrl/pkg/log"
 	"github.com/intel/goresctrl/pkg/utils"
 )
 
@@ -67,7 +66,7 @@ const (
 )
 
 type control struct {
-	grclog.Logger
+	*slog.Logger
 
 	resctrlGroupPrefix string
 	conf               config
@@ -75,7 +74,7 @@ type control struct {
 	classes            map[string]*ctrlGroup
 }
 
-var log grclog.Logger = grclog.NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt ] ", 0))
+var log *slog.Logger = slog.Default()
 
 var info *resctrlInfo
 
@@ -83,7 +82,7 @@ var rdt *control
 
 // SetLogger sets the logger instance to be used by the package. This function
 // may be called even before Initialize().
-func SetLogger(l grclog.Logger) {
+func SetLogger(l *slog.Logger) {
 	log = l
 	if rdt != nil {
 		rdt.setLogger(l)
@@ -159,7 +158,7 @@ func SetConfigFromFile(path string, force bool) error {
 		return err
 	}
 
-	log.Infof("configuration successfully loaded from %q", path)
+	log.Info("configuration successfully loaded", "path", path)
 	return nil
 }
 
@@ -231,12 +230,12 @@ func (c *control) getMonFeatures() map[MonResource][]string {
 	return ret
 }
 
-func (c *control) setLogger(l grclog.Logger) {
+func (c *control) setLogger(l *slog.Logger) {
 	c.Logger = l
 }
 
 func (c *control) setConfig(newConfig *Config, force bool) error {
-	c.Infof("configuration update")
+	c.Info("configuration update")
 
 	conf, err := (*newConfig).resolve()
 	if err != nil {
@@ -251,13 +250,14 @@ func (c *control) setConfig(newConfig *Config, force bool) error {
 	c.conf = conf
 	// TODO: we'd better create a deep copy
 	c.rawConf = *newConfig
-	c.Infof("configuration finished")
+	c.Info("configuration finished")
 
 	return nil
 }
 
 func (c *control) configureResctrl(conf config, force bool) error {
-	grclog.DebugBlock(c, "applying resolved config:", "  ", "%s", utils.DumpJSON(conf))
+	// TODO: Think a better (more structured) way to log this
+	log.Debug("applying resolved configuration:\n" + utils.DumpJSON(conf))
 
 	// Remove stale resctrl groups
 	classesFromFs, err := c.classesFromResctrlFs()
@@ -276,7 +276,7 @@ func (c *control) configureResctrl(conf config, force bool) error {
 					return fmt.Errorf("refusing to remove non-empty resctrl group %q", cls.relPath(""))
 				}
 			}
-			log.Debugf("removing existing resctrl group %q", cls.relPath(""))
+			log.Debug("removing existing resctrl group", "name", cls.Name(), "path", cls.path(""))
 			err = groupRemoveFunc(cls.path(""))
 			if err != nil {
 				return fmt.Errorf("failed to remove resctrl group %q: %v", cls.relPath(""), err)
@@ -289,14 +289,14 @@ func (c *control) configureResctrl(conf config, force bool) error {
 	for name, cls := range c.classes {
 		if _, ok := conf.Classes[cls.name]; !ok || cls.prefix != c.resctrlGroupPrefix {
 			if !isRootClass(cls.name) {
-				log.Debugf("dropping stale class %q (%q)", name, cls.path(""))
+				log.Debug("dropping stale class", "name", cls.Name(), "path", cls.path(""))
 				delete(c.classes, name)
 			}
 		}
 	}
 
 	if _, ok := c.classes[RootClassName]; !ok {
-		log.Warnf("root class missing from runtime data, re-adding...")
+		log.Warn("root class missing from runtime data, re-adding...")
 		c.classes[RootClassName] = classesFromFs[RootClassName]
 	}
 
@@ -323,7 +323,7 @@ func (c *control) configureResctrl(conf config, force bool) error {
 }
 
 func (c *control) discoverFromResctrl(prefix string) error {
-	c.Debugf("running class discovery from resctrl filesystem using prefix %q", prefix)
+	c.Debug("running class discovery from resctrl filesystem", "prefix", prefix)
 
 	classesFromFs, err := c.classesFromResctrlFsPrefix(prefix)
 	if err != nil {
@@ -334,7 +334,7 @@ func (c *control) discoverFromResctrl(prefix string) error {
 	for name, cls := range c.classes {
 		if _, ok := classesFromFs[cls.name]; !ok || cls.prefix != prefix {
 			if !isRootClass(cls.name) {
-				log.Debugf("dropping stale class %q (%q)", name, cls.path(""))
+				log.Debug("dropping stale class", "name", cls.Name(), "path", cls.path(""))
 				delete(c.classes, name)
 			}
 		}
@@ -343,7 +343,7 @@ func (c *control) discoverFromResctrl(prefix string) error {
 	for name, cls := range classesFromFs {
 		if _, ok := c.classes[name]; !ok {
 			c.classes[name] = cls
-			log.Debugf("adding discovered class %q (%q)", name, cls.path(""))
+			log.Debug("adding discovered class", "name", cls.Name(), "path", cls.path(""))
 		}
 	}
 

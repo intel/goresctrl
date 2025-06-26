@@ -14,34 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package rdt implements an API for managing Intel® RDT technologies via the
-// resctrl pseudo-filesystem of the Linux kernel. It provides flexible
-// configuration with a hierarchical approach for easy management of exclusive
-// cache allocations.
-//
-// Goresctrl supports all available RDT technologies, i.e. L2 and L3 Cache
-// Allocation (CAT) with Code and Data Prioritization (CDP) and Memory
-// Bandwidth Allocation (MBA) plus Cache Monitoring (CMT) and Memory Bandwidth
-// Monitoring (MBM).
-//
-// Basic usage example:
-//
-//	rdt.SetLogger(logrus.New())
-//
-//	if err := rdt.Initialize(""); err != nil {
-//		return fmt.Errorf("RDT not supported: %v", err)
-//	}
-//
-//	if err := rdt.SetConfigFromFile("/path/to/rdt.conf.yaml", false); err != nil {
-//		return fmt.Errorf("RDT configuration failed: %v", err)
-//	}
-//
-//	if cls, ok := rdt.GetClass("my-class"); ok {
-//	   //  Set PIDs 12345 and 12346 to class "my-class"
-//		if err := cls.AddPids("12345", "12346"); err != nil {
-//			return fmt.Errorf("failed to add PIDs to RDT class: %v", err)
-//		}
-//	}
 package rdt
 
 import (
@@ -170,7 +142,7 @@ func (c *ctrlGroup) CreateMonGroup(name string, annotations map[string]string) (
 		return mg, nil
 	}
 
-	log.Debugf("creating monitoring group %s/%s", c.name, name)
+	log.Debug("adding monitoring group", "class", c.Name(), "name", name)
 	mg, err := newMonGroup(c.monPrefix, name, c, annotations)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new monitoring group %q: %v", name, err)
@@ -184,11 +156,11 @@ func (c *ctrlGroup) CreateMonGroup(name string, annotations map[string]string) (
 func (c *ctrlGroup) DeleteMonGroup(name string) error {
 	mg, ok := c.monGroups[name]
 	if !ok {
-		log.Warnf("trying to delete non-existent mon group %s/%s", c.name, name)
+		log.Warn("trying to delete non-existent mon group", "class", c.Name(), "name", name, "path", mg.path(""))
 		return nil
 	}
 
-	log.Debugf("deleting monitoring group %s/%s", c.name, name)
+	log.Debug("deleting monitoring group", "class", c.Name(), "name", name)
 	if err := groupRemoveFunc(mg.path("")); err != nil {
 		return fmt.Errorf("failed to remove monitoring group %q: %v", mg.relPath(""), err)
 	}
@@ -266,12 +238,12 @@ func (c *ctrlGroup) configure(name string, class *classConfig,
 	}
 
 	if len(schemata) > 0 {
-		log.Debugf("writing schemata %q to %q", schemata, c.relPath(""))
+		log.Debug("writing schemata", "schemata", schemata, "path", c.path(""))
 		if err := rdt.writeRdtFile(c.relPath("schemata"), []byte(schemata)); err != nil {
 			return err
 		}
 	} else {
-		log.Debugf("empty schemata")
+		log.Debug("empty schemata")
 	}
 
 	return nil
@@ -341,7 +313,7 @@ func (r *resctrlGroup) AddPids(pids ...string) (err error) {
 	for _, pid := range pids {
 		if _, err := f.WriteString(pid + "\n"); err != nil {
 			if errors.Is(err, syscall.ESRCH) {
-				log.Debugf("no task %s", pid)
+				log.Debug("no task", "pid", pid)
 			} else {
 				return fmt.Errorf("failed to assign processes %v to class %q: %v", pids, r.name, rdt.cmdError(err))
 			}
@@ -356,7 +328,7 @@ func (r *resctrlGroup) GetMonData() MonData {
 	if info.l3mon.Supported() {
 		l3, err := r.getMonL3Data()
 		if err != nil {
-			log.Warnf("failed to retrieve L3 monitoring data: %v", err)
+			log.Error("failed to retrieve L3 monitoring data", "error", err)
 		} else {
 			m.L3 = l3
 		}
@@ -378,14 +350,14 @@ func (r *resctrlGroup) getMonL3Data() (MonL3Data, error) {
 			// Parse cache id from the dirname
 			id, err := strconv.ParseUint(strings.TrimPrefix(name, "mon_L3_"), 10, 32)
 			if err != nil {
-				// Just print a warning, we try to retrieve as much info as possible
-				log.Warnf("error parsing L3 monitor data directory name %q: %v", name, err)
+				// Just log an error and continue, we try to retrieve as much info as possible
+				log.Error("failed to parse L3 monitor data directory name", "fileName", name, "error", err)
 				continue
 			}
 
 			data, err := r.getMonLeafData(filepath.Join("mon_data", name))
 			if err != nil {
-				log.Warnf("failed to read monitor data: %v", err)
+				log.Error("failed to read monitor data", "error", err)
 				continue
 			}
 
@@ -410,8 +382,8 @@ func (r *resctrlGroup) getMonLeafData(path string) (MonLeafData, error) {
 		// We expect that all the files in the dir are regular files
 		val, err := readFileUint64(r.path(path, name))
 		if err != nil {
-			// Just print a warning, we want to retrieve as much info as possible
-			log.Warnf("error reading data file: %v", err)
+			// Just log an error and continue, we want to retrieve as much info as possible
+			log.Error("failed to read data file", "error", err)
 			continue
 		}
 

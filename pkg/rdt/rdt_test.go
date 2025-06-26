@@ -17,7 +17,7 @@ limitations under the License.
 package rdt
 
 import (
-	stdlog "log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,7 +30,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	grclog "github.com/intel/goresctrl/pkg/log"
 	"github.com/intel/goresctrl/pkg/testutils"
 	"github.com/intel/goresctrl/pkg/utils"
 	testdata "github.com/intel/goresctrl/test/data"
@@ -182,7 +181,7 @@ partitions:
 	// 1. test uninitialized interface
 	//
 	rdt = nil
-	SetLogger(grclog.NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt-test-1 ] ", 0)))
+	SetLogger(slog.Default().With("test", "rdt-1"))
 
 	if err := SetConfig(&Config{}, false); err == nil {
 		t.Errorf("setting config on uninitialized rdt succeeded unexpectedly")
@@ -260,7 +259,7 @@ partitions:
 	verifyGroupNames(cls.GetMonGroups(), []string{"predefined_group_live"})
 
 	// Check that SetLogger() takes effect in the control interface, too
-	l := grclog.NewLoggerWrapper(stdlog.New(os.Stderr, "[ rdt-test-2 ] ", 0))
+	l := slog.Default().With("test", "rdt-2")
 	SetLogger(l)
 	if l != rdt.Logger {
 		t.Errorf("unexpected logger implementation")
