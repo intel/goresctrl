@@ -19,8 +19,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"maps"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -34,38 +35,77 @@ var (
 	packageIds string
 )
 
-type subCmd func([]string) error
+type subCmd struct {
+	description string
+	f           func([]string) error
+}
 
 var subCmds = map[string]subCmd{
-	"info": subCmdInfo,
-	"bf":   subCmdBF,
-	"cp":   subCmdCP,
+	"info": subCmd{
+		description: "Print SST information",
+		f:           subCmdInfo,
+	},
+	"bf": subCmd{
+		description: "Configure the SST-BF feature",
+		f:           subCmdBF,
+	},
+	"cp": subCmd{
+		description: "Configure the SST-CP feature",
+		f:           subCmdCP,
+	},
 }
 
 func main() {
-	cmds := make([]string, 0, len(subCmds))
-	for c := range subCmds {
-		cmds = append(cmds, c)
-	}
-	sort.Strings(cmds)
-	allCmds := strings.Join(cmds, ", ")
+	flag.CommandLine.SetOutput(os.Stdout)
+	flag.Usage = usage
 
-	if len(os.Args) < 2 {
-		fmt.Printf("missing sub-command, must be one of: %s\n", allCmds)
+	// Parse global command line flags
+	help := flag.Bool("help", false, "Display this help")
+	flag.Parse()
+
+	if *help {
+		flag.Usage()
+		os.Exit(0)
+	}
+
+	args := flag.Args()
+	if len(args) < 1 {
+		flag.Usage()
 		os.Exit(1)
 	}
 
 	// Run sub-command
-	cmd, ok := subCmds[os.Args[1]]
+	cmd, ok := subCmds[args[0]]
 	if !ok {
-		fmt.Printf("unknown sub-command %q, must be of: %s\n", os.Args[1], allCmds)
-		os.Exit(1)
+		fmt.Printf("unknown sub-command %q\n", args[0])
+		flag.Usage()
+		os.Exit(2)
 	}
 
-	if err := cmd(os.Args[2:]); err != nil {
-		fmt.Printf("ERROR: sub-command %q failed: %v\n", os.Args[1], err)
+	if err := cmd.f(args[1:]); err != nil {
+		fmt.Printf("sub-command %q failed: %v\n", args[0], err)
 		os.Exit(1)
 	}
+}
+
+// nolint:errcheck
+func usage() {
+	f := flag.CommandLine.Output()
+	fmt.Fprint(f, `Usage: sst-ctl [global-options] <command> [options]
+
+Available commands:`)
+
+	for _, c := range slices.Sorted(maps.Keys(subCmds)) {
+		fmt.Fprintf(f, "\n  %-12s %s", c, subCmds[c].description)
+	}
+
+	fmt.Fprint(f, `
+
+Use "sst-ctl <command> --help" for more information about a command.
+`)
+
+	fmt.Fprint(f, "\nGlobal options:\n")
+	flag.PrintDefaults()
 }
 
 func addGlobalFlags(flagset *flag.FlagSet) {
