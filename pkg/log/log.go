@@ -19,72 +19,9 @@ package log
 import (
 	"context"
 	"fmt"
-	stdlog "log"
 	"log/slog"
 	"strings"
 )
-
-// Logger is the logging interface for goresctl
-type Logger interface {
-	Debugf(format string, v ...interface{})
-	Infof(format string, v ...interface{})
-	Warnf(format string, v ...interface{})
-	Errorf(format string, v ...interface{})
-	Panicf(format string, v ...interface{})
-	Fatalf(format string, v ...interface{})
-}
-
-type logger struct {
-	*stdlog.Logger
-}
-
-// NewLoggerWrapper wraps an implementation of the golang standard intreface
-// into a goresctl specific compatible logger interface
-func NewLoggerWrapper(l *stdlog.Logger) Logger {
-	return &logger{Logger: l}
-}
-
-func (l *logger) Debugf(format string, v ...interface{}) {
-	l.Printf("DEBUG: "+format, v...)
-}
-
-func (l *logger) Infof(format string, v ...interface{}) {
-	l.Printf("INFO: "+format, v...)
-}
-
-func (l *logger) Warnf(format string, v ...interface{}) {
-	l.Printf("WARN: "+format, v...)
-}
-
-func (l *logger) Errorf(format string, v ...interface{}) {
-	l.Printf("ERROR: "+format, v...)
-}
-
-func (l *logger) Panicf(format string, v ...interface{}) {
-	l.Logger.Panicf(format, v...)
-}
-
-func (l *logger) Fatalf(format string, v ...interface{}) {
-	l.Logger.Fatalf(format, v...)
-}
-
-func InfoBlock(l Logger, heading, linePrefix, format string, v ...interface{}) {
-	l.Infof("%s", heading)
-
-	lines := strings.Split(fmt.Sprintf(format, v...), "\n")
-	for _, line := range lines {
-		l.Infof("%s%s", linePrefix, line)
-	}
-}
-
-func DebugBlock(l Logger, heading, linePrefix, format string, v ...interface{}) {
-	l.Debugf("%s", heading)
-
-	lines := strings.Split(fmt.Sprintf(format, v...), "\n")
-	for _, line := range lines {
-		l.Debugf("%s%s", linePrefix, line)
-	}
-}
 
 // Custom slog handler for changing the log level.
 type logHandler struct {
