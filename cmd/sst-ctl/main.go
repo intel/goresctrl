@@ -19,13 +19,16 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log/slog"
 	"maps"
 	"os"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/intel/goresctrl/pkg/log"
 	goresctrlpath "github.com/intel/goresctrl/pkg/path"
+	"github.com/intel/goresctrl/pkg/rdt"
 	"github.com/intel/goresctrl/pkg/sst"
 	"github.com/intel/goresctrl/pkg/utils"
 )
@@ -61,12 +64,16 @@ func main() {
 
 	// Parse global command line flags
 	help := flag.Bool("help", false, "Display this help")
+	logLevel := log.NewLevelFlag(slog.LevelDebug)
+	flag.Var(logLevel, "log-level", "Set log level (debug, info, warn, error)")
 	flag.Parse()
 
 	if *help {
 		flag.Usage()
 		os.Exit(0)
 	}
+
+	rdt.SetLogger(slog.New(log.NewLogHandler(logLevel)))
 
 	args := flag.Args()
 	if len(args) < 1 {
