@@ -21,12 +21,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log/slog"
 	"maps"
 	"net/http"
 	"os"
 	"slices"
 	"strings"
 
+	"github.com/intel/goresctrl/pkg/log"
 	"github.com/intel/goresctrl/pkg/rdt"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -65,14 +67,19 @@ func main() {
 	flag.CommandLine.SetOutput(os.Stdout)
 	flag.Usage = usage
 
-	// Define the main help flag manually
+	// Parse global command line flags
 	help := flag.Bool("help", false, "Display this help")
+	logLevel := log.NewLevelFlag(slog.LevelDebug)
+	flag.Var(logLevel, "log-level", "Set log level (debug, info, warn, error)")
 	flag.Parse()
 
 	if *help {
 		flag.Usage()
 		os.Exit(0)
 	}
+
+	// Set log level
+	rdt.SetLogger(slog.New(log.NewLogHandler(logLevel)))
 
 	args := flag.Args()
 	if len(args) < 1 {
