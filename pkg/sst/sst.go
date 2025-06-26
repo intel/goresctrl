@@ -18,10 +18,9 @@ package sst
 
 import (
 	"fmt"
-	stdlog "log"
+	"log/slog"
 	"os"
 
-	grclog "github.com/intel/goresctrl/pkg/log"
 	goresctrlpath "github.com/intel/goresctrl/pkg/path"
 	"github.com/intel/goresctrl/pkg/utils"
 )
@@ -76,7 +75,7 @@ const (
 // ClosCPUSet contains mapping from Clos id to a set of CPU ids
 type ClosCPUSet map[int]utils.IDSet
 
-var sstlog grclog.Logger = grclog.NewLoggerWrapper(stdlog.New(os.Stderr, "[ sst ] ", 0))
+var sstlog *slog.Logger = slog.Default()
 
 func isstDevPath() string { return goresctrlpath.Path("dev/isst_interface") }
 
@@ -86,9 +85,9 @@ func SstSupported() bool {
 	devPath := isstDevPath()
 	if _, err := os.Stat(devPath); err != nil {
 		if !os.IsNotExist(err) {
-			sstlog.Warnf("failed to access sst device %q: %v", devPath, err)
+			sstlog.Error("failed to access sst device", "path", devPath, "error", err)
 		} else {
-			sstlog.Debugf("sst device %q does not exist", devPath)
+			sstlog.Debug("sst device does not exist", "path", devPath)
 		}
 		return false
 	}
@@ -168,13 +167,13 @@ func getSinglePackageInfo(pkg *cpuPackageInfo) (SstPackageInfo, error) {
 
 	// Forget about older hw with partial/convoluted support
 	if info.PPVersion < 3 {
-		sstlog.Infof("SST PP version %d (less than 3), giving up...")
+		sstlog.Info("SST PP version less than 3, giving up...", "version", info.PPVersion)
 		return info, nil
 	}
 
 	// Read the status of currently active perf-profile
 	if !info.PPSupported {
-		sstlog.Debugf("SST PP feature not supported, only profile level %d is valid", info.PPCurrentLevel)
+		sstlog.Debug("SST PP feature not supported, only current profile level is valid", "profileLevel", info.PPCurrentLevel)
 	}
 
 	if rsp, err = sendMboxCmd(cpu, CONFIG_TDP, CONFIG_TDP_GET_TDP_CONTROL, 0, uint32(info.PPCurrentLevel)); err != nil {
@@ -545,7 +544,7 @@ func setDefaultClosParam(info *SstPackageInfo, cpu utils.ID) error {
 }
 
 func assignCPU2Clos(info *SstPackageInfo, clos int) error {
-	sstlog.Debugf("Setting Clos %d for cpus %v\n", clos, info.ClosCPUInfo[clos].Members())
+	sstlog.Debug("assigning CPUs to SST CLOS", "closID", clos, "cpuset", info.ClosCPUInfo[clos].Members())
 
 	for _, cpu := range info.ClosCPUInfo[clos].Members() {
 		if err := associate2Clos(cpu, clos); err != nil {

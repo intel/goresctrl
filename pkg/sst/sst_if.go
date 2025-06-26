@@ -20,6 +20,7 @@ package sst
 
 import (
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"syscall"
@@ -102,11 +103,11 @@ func sendMboxCmd(cpu utils.ID, cmd uint16, subCmd uint16, parameter uint32, reqD
 		},
 	}
 
-	sstlog.Debugf("MBOX SEND cpu: %d cmd: %#02x sub: %#02x data: %#x", cpu, cmd, subCmd, reqData)
+	sstlog.Debug("MBOX SEND", "cpu", cpu, "cmd", cmd, "subCmd", subCmd, slogHex("data", reqData))
 	if err := isstIoctl(ISST_IF_MBOX_COMMAND, uintptr(unsafe.Pointer(&req))); err != nil {
 		return 0, fmt.Errorf("mbox command failed with %v", err)
 	}
-	sstlog.Debugf("MBOX RECV data: %#x", req.Mbox_cmd[0].Resp_data)
+	sstlog.Debug("MBOX RECV", slogHex("data", req.Mbox_cmd[0].Resp_data))
 
 	return req.Mbox_cmd[0].Resp_data, nil
 }
@@ -134,11 +135,15 @@ func sendMMIOCmd(cpu utils.ID, reg uint32, value uint32, doWrite bool) (uint32, 
 			},
 		},
 	}
-	sstlog.Debugf("MMIO SEND cpu: %d reg: %#x value: %#x write: %t", cpu, reg, value, doWrite)
+	sstlog.Debug("MMIO SEND", "cpu", cpu, "reg", reg, slogHex("data", value), "write", doWrite)
 	if err := isstIoctl(ISST_IF_IO_CMD, uintptr(unsafe.Pointer(&req))); err != nil {
 		return 0, fmt.Errorf("MMIO command failed with %v", err)
 	}
-	sstlog.Debugf("MMIO RECV data: %#x", req.Io_reg[0].Value)
+	sstlog.Debug("MMIO RECV", slogHex("data", req.Io_reg[0].Value))
 
 	return req.Io_reg[0].Value, nil
+}
+
+func slogHex(key string, val uint32) slog.Attr {
+	return slog.String(key, fmt.Sprintf("%#02x", val))
 }
