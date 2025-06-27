@@ -22,7 +22,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -30,12 +29,10 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/intel/goresctrl/pkg/testutils"
-	"github.com/intel/goresctrl/pkg/utils"
 	testdata "github.com/intel/goresctrl/test/data"
 )
 
@@ -74,9 +71,7 @@ func newMockResctrlFs(t *testing.T, name, mountOpts string) (*mockResctrlFs, err
 
 func (m *mockResctrlFs) delete() {
 	if _, ok := os.LookupEnv("TEST_NOCLEAN"); !ok {
-		if err := os.RemoveAll(m.baseDir); err != nil {
-			m.t.Fatalf("failed to delete mock resctrl fs: %v", err)
-		}
+		require.NoError(m.t, os.RemoveAll(m.baseDir), "failed to delete mock resctrl fs")
 	}
 }
 
@@ -94,17 +89,16 @@ func (m *mockResctrlFs) createCtrlGroup(name string) error {
 
 func (m *mockResctrlFs) copyFromOrig(relSrc, relDst string) {
 	absSrc := filepath.Join(m.origDir, relSrc)
-	if s, err := os.Stat(absSrc); err != nil {
-		m.t.Fatalf("%v", err)
-	} else if s.IsDir() {
+	s, err := os.Stat(absSrc)
+	require.NoError(m.t, err)
+
+	if s.IsDir() {
 		absSrc = filepath.Join(absSrc, ".")
 	}
 
 	absDst := filepath.Join(m.baseDir, "resctrl", relDst)
 	cmd := exec.Command("cp", "-r", absSrc, absDst)
-	if err := cmd.Run(); err != nil {
-		m.t.Fatalf("failed to copy mock data %q -> %q: %v", absSrc, absDst, err)
-	}
+	require.NoError(m.t, cmd.Run(), "failed to copy mock data %q -> %q: %v", absSrc, absDst, err)
 }
 
 func (m *mockResctrlFs) verifyTextFile(relPath, content string) {
@@ -113,17 +107,13 @@ func (m *mockResctrlFs) verifyTextFile(relPath, content string) {
 
 func verifyTextFile(t *testing.T, path, content string) {
 	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read %q: %v", path, err)
-	}
+	require.NoError(t, err)
 	require.Equal(t, content, string(data))
 }
 
 func parseTestConfig(t *testing.T, data string) *Config {
 	c := &Config{}
-	if err := yaml.Unmarshal([]byte(data), c); err != nil {
-		t.Fatalf("failed to parse rdt config: %v", err)
-	}
+	require.NoError(t, yaml.Unmarshal([]byte(data), c), "failed to parse rdt config")
 	return c
 }
 
@@ -192,9 +182,7 @@ partitions:
 		}
 		sort.Strings(names)
 		sort.Strings(b)
-		if !cmp.Equal(names, b) {
-			t.Errorf("unexpected class/group names: expected %s got %s", b, names)
-		}
+		require.Equal(t, names, b)
 	}
 
 	// Set group create and remove function so that mock groups have tasks file
@@ -208,35 +196,21 @@ partitions:
 	rdt = nil
 	SetLogger(slog.Default().With("test", "rdt-1"))
 
-	if err := SetConfig(&Config{}, false); err == nil {
-		t.Errorf("setting config on uninitialized rdt succeeded unexpectedly")
-
-	}
-	if classes := GetClasses(); len(classes) != 0 {
-		t.Errorf("uninitialized rdt contains classes %s", classes)
-	}
-	if _, ok := GetClass(""); ok {
-		t.Errorf("expected to not get a class with empty name")
-	}
-	if MonSupported() {
-		t.Errorf("unitialized rdt claims monitoring to be supported")
-	}
-	if features := GetMonFeatures(); len(features) != 0 {
-		t.Errorf("uninitialized rdt returned monitoring features %s", features)
-	}
+	require.Error(t, SetConfig(&Config{}, false), "setting config on uninitialized rdt succeeded unexpectedly")
+	require.Empty(t, GetClasses(), "uninitialized rdt contains classes")
+	_, ok := GetClass("")
+	require.False(t, ok, "expected to not get a class with empty name")
+	require.False(t, MonSupported(), "unitialized rdt claims monitoring to be supported")
+	require.Empty(t, GetMonFeatures(), "uninitialized rdt returned monitoring features")
 
 	//
 	// 2. Test setting up RDT with L3 L3_MON and MB support
 	//
 	mockFs, err := newMockResctrlFs(t, "resctrl.full", "")
-	if err != nil {
-		t.Fatalf("failed to set up mock resctrl fs: %v", err)
-	}
+	require.NoError(t, err, "failed to set up mock resctrl fs")
 	defer mockFs.delete()
 
-	if err := Initialize(mockGroupPrefix); err != nil {
-		t.Fatalf("rdt initialization failed: %v", err)
-	}
+	require.NoError(t, Initialize(mockGroupPrefix), "rdt initialization failed")
 
 	// Check that existing groups were read correctly on init
 	classes := GetClasses()
@@ -247,18 +221,14 @@ partitions:
 	cls, _ = GetClass("Guaranteed")
 	verifyGroupNames(cls.GetMonGroups(), []string{"predefined_group_empty", "predefined_group_live"})
 	cls, _ = GetClass("Stale")
-	if err := cls.AddPids("99"); err != nil {
-		t.Fatalf("AddPids() failed: %v", err)
-	}
+	require.NoError(t, cls.AddPids("99"), "AddPids() failed")
 
 	// Invalid test config content should cause an error
-	if err := SetConfigFromData([]byte("partitions: foo"), true); err == nil {
-		t.Fatalf("rdt configuration with invalid file succeeded unexpetedly")
-	}
+	require.Error(t, SetConfigFromData([]byte("partitions: foo"), true), "rdt configuration with invalid data succeeded unexpectedly")
+
 	// Non-existent configuration file should cause an error
-	if err := SetConfigFromFile("non-existent-config-file", true); err == nil {
-		t.Fatalf("rdt configuration with non-existent file succeeded unexpetedly")
-	}
+	require.Error(t, SetConfigFromFile("non-existent-config-file", true), "rdt configuration with non-existent file succeeded unexpectedly")
+
 	// Configuration should fail as "Stale" class has pids assigned to it
 	testConfigFile := testutils.CreateTempFile(t, rdtTestConfig)
 	defer func() {
@@ -266,18 +236,13 @@ partitions:
 			t.Logf("failed to remove temporary file %s: %v", testConfigFile, err)
 		}
 	}()
-	if err := SetConfigFromFile(testConfigFile, false); err == nil {
-		t.Fatalf("rdt configuration succeeded unexpetedly")
-	}
+	require.Error(t, SetConfigFromFile(testConfigFile, false), "rdt configuration succeeded unexpetedly")
+
 	// Forced configuration should succeed
-	if err := SetConfigFromFile(testConfigFile, true); err != nil {
-		t.Fatalf("rdt forced configuration failed: %v", err)
-	}
+	require.NoError(t, SetConfigFromFile(testConfigFile, true), "rdt forced configuration failed")
 
 	// Check that KubernetesOptions of classes are parsed and propagated correctly
-	if !rdt.conf.Classes["BestEffort"].Kubernetes.DenyPodAnnotation {
-		t.Fatal("DenyPodAnnotation of class BestEffort should be 'true'")
-	}
+	require.True(t, rdt.conf.Classes["BestEffort"].Kubernetes.DenyPodAnnotation)
 
 	// Empty mon group(s) should be pruned after configuration
 	cls, _ = GetClass("Guaranteed")
@@ -286,9 +251,7 @@ partitions:
 	// Check that SetLogger() takes effect in the control interface, too
 	l := slog.Default().With("test", "rdt-2")
 	SetLogger(l)
-	if l != rdt.Logger {
-		t.Errorf("unexpected logger implementation")
-	}
+	require.Same(t, l, rdt.Logger)
 
 	// Check that the path() and relPath() methods work correctly
 	c, err := rdt.getClass("Guaranteed")
@@ -316,9 +279,7 @@ partitions:
 		require.NoError(t, err)
 		files, _ := os.ReadDir(c.path("mon_groups"))
 		for _, f := range files {
-			if strings.HasPrefix(mockGroupPrefix, f.Name()) {
-				t.Errorf("unexpected monitor group found %q", f.Name())
-			}
+			require.False(t, strings.HasPrefix(mockGroupPrefix, f.Name()), "unexpected monitor group found %q", f.Name())
 		}
 	}
 
@@ -328,101 +289,74 @@ partitions:
 
 	// Verify assigning pids to classes (ctrl groups)
 	cls, _ = GetClass("Guaranteed")
-	if n := cls.Name(); n != "Guaranteed" {
-		t.Errorf("CtrlGroup.Name() returned %q, expected %q", n, "Guaranteed")
-	}
+	require.Equal(t, "Guaranteed", cls.Name())
 
 	pids := []string{"10", "11", "12"}
-	if err := cls.AddPids(pids...); err != nil {
-		t.Errorf("AddPids() failed: %v", err)
-	}
-	if p, err := cls.GetPids(); err != nil {
-		t.Errorf("GetPids() failed: %v", err)
-	} else if !cmp.Equal(p, pids) {
-		t.Errorf("GetPids() returned %s, expected %s", p, pids)
-	}
+	require.NoError(t, cls.AddPids(pids...))
+
+	p, err := cls.GetPids()
+	require.NoError(t, err)
+	require.Equal(t, pids, p)
 
 	c, err = rdt.getClass("Guaranteed")
 	require.NoError(t, err)
 	mockFs.verifyTextFile(c.relPath("tasks"), "10\n11\n12\n")
 
 	// Verify MonSupported and GetMonFeatures
-	if !MonSupported() {
-		t.Errorf("MonSupported() returned false, expected true")
-	}
+	require.False(t, !MonSupported())
+
 	expectedMonFeatures := map[MonResource][]string{MonResourceL3: []string{"llc_occupancy", "mbm_local_bytes", "mbm_total_bytes"}}
-	if features := GetMonFeatures(); !cmp.Equal(features, expectedMonFeatures) {
-		t.Fatalf("GetMonFeatures() returned %v, expected %v", features, expectedMonFeatures)
-	}
+	require.Equal(t, expectedMonFeatures, GetMonFeatures())
 
 	// Test creating monitoring groups
 	cls, _ = GetClass("Guaranteed")
 	mgName := "test_group"
 	mgAnnotations := map[string]string{"a_key": "a_value"}
 	mg, err := cls.CreateMonGroup(mgName, mgAnnotations)
-	if err != nil {
-		t.Fatalf("creating mon group failed: %v", err)
-	}
-	if n := mg.Name(); n != mgName {
-		t.Errorf("MonGroup.Name() returned %q, expected %q", n, mgName)
-	}
-	if a := mg.GetAnnotations(); !cmp.Equal(a, mgAnnotations) {
-		t.Errorf("MonGroup.GetAnnotations() returned %s, expected %s", a, mgAnnotations)
-	}
-	if n := mg.Parent().Name(); n != "Guaranteed" {
-		t.Errorf("MonGroup.Parent().Name() returned %q, expected %q", n, "Guaranteed")
-	}
+	require.NoError(t, err, "creating mon group failed")
+	require.Equal(t, mgName, mg.Name())
+	require.Equal(t, mgAnnotations, mg.GetAnnotations())
+	require.Equal(t, "Guaranteed", mg.Parent().Name())
 
-	if _, ok := cls.GetMonGroup("non-existing-group"); ok {
-		t.Errorf("unexpected success when querying non-existing group")
-	}
-	if _, ok := cls.GetMonGroup(mgName); !ok {
-		t.Errorf("unexpected error when querying mon group: %v", err)
-	}
+	_, ok = cls.GetMonGroup("non-existing-group")
+	require.False(t, ok, "unexpected success when querying non-existing group")
+
+	_, ok = cls.GetMonGroup(mgName)
+	require.True(t, ok)
 
 	verifyGroupNames(cls.GetMonGroups(), []string{"predefined_group_live", mgName})
 
 	c, err = rdt.getClass("Guaranteed")
 	require.NoError(t, err)
 	mgPath := c.path("mon_groups", "goresctrl."+mgName)
-	if _, err := os.Stat(mgPath); err != nil {
-		t.Errorf("mon group directory not found: %v", err)
-	}
+	_, err = os.Stat(mgPath)
+	require.NoError(t, err, "mon group directory not found")
 
 	// Check that the monGroup.path() and relPath() methods work correctly
 	c, err = rdt.getClass("Guaranteed")
 	require.NoError(t, err)
 	mgi, err := c.monGroupFromResctrlFs(mgName)
 	require.NoError(t, err)
-	if p := mgi.path("foo"); p != filepath.Join(mockFs.baseDir, "resctrl", "goresctrl.Guaranteed", "mon_groups", "goresctrl."+mgName, "foo") {
-		t.Errorf("path() returned wrong path %q", p)
-	}
-	if p := mgi.relPath("foo"); p != filepath.Join("goresctrl.Guaranteed", "mon_groups", "goresctrl."+mgName, "foo") {
-		t.Errorf("relPath() returned wrong path %q", p)
-	}
+	assert.Equal(t, filepath.Join(mockFs.baseDir, "resctrl", "goresctrl.Guaranteed", "mon_groups", "goresctrl."+mgName, "foo"), mgi.path("foo"))
+	assert.Equal(t, filepath.Join("goresctrl.Guaranteed", "mon_groups", "goresctrl."+mgName, "foo"), mgi.relPath("foo"))
 
 	// Test deleting monitoring groups
-	if err := cls.DeleteMonGroup(mgName); err != nil {
-		t.Errorf("unexpected error when deleting mon group: %v", err)
-	}
-	if _, ok := cls.GetMonGroup("non-existing-group"); ok {
-		t.Errorf("unexpected success when querying deleted group")
-	}
+	require.NoError(t, cls.DeleteMonGroup(mgName))
+
+	_, ok = cls.GetMonGroup("non-existing-group")
+	require.False(t, ok, "unexpected success when querying deleted group")
+
 	if _, err := os.Stat(mgPath); !os.IsNotExist(err) {
-		t.Errorf("unexpected error when checking directory of deleted mon group: %v", err)
+		t.Fatalf("unexpected error when checking directory of deleted mon group: %v", err)
 	}
 
 	for _, n := range []string{"foo", "bar", "baz"} {
-		if _, err := cls.CreateMonGroup(n, map[string]string{}); err != nil {
-			t.Errorf("creating mon group failed: %v", err)
-		}
+		_, err := cls.CreateMonGroup(n, map[string]string{})
+		require.NoError(t, err)
 	}
-	if err := cls.DeleteMonGroups(); err != nil {
-		t.Errorf("unexpected error when deleting all mon groups: %v", err)
-	}
-	if mgs := cls.GetMonGroups(); len(mgs) != 0 {
-		t.Errorf("unexpected mon groups exist: %v", mgs)
-	}
+	require.NoError(t, cls.DeleteMonGroups())
+	mgs := cls.GetMonGroups()
+	require.Empty(t, mgs)
 
 	// Verify assigning pids to monitor group
 	mgName = "test_group_2"
@@ -431,14 +365,11 @@ partitions:
 	mg, _ = cls.CreateMonGroup(mgName, nil)
 
 	pids = []string{"10"}
-	if err := mg.AddPids(pids...); err != nil {
-		t.Errorf("MonGroup.AddPids() failed: %v", err)
-	}
-	if p, err := mg.GetPids(); err != nil {
-		t.Errorf("MonGroup.GetPids() failed: %v", err)
-	} else if !cmp.Equal(p, pids) {
-		t.Errorf("MonGroup.GetPids() returned %s, expected %s", p, pids)
-	}
+	require.NoError(t, mg.AddPids(pids...))
+	p, err = mg.GetPids()
+	require.NoError(t, err)
+	require.Equal(t, pids, p)
+
 	c, err = rdt.getClass("Guaranteed")
 	require.NoError(t, err)
 	mgi, err = c.monGroupFromResctrlFs(mgName)
@@ -471,9 +402,7 @@ partitions:
 		},
 	}
 	md := mg.GetMonData()
-	if !cmp.Equal(md, expected) {
-		t.Errorf("unexcpected monitoring data\nexpected:\n%s\nreceived:\n%s", utils.DumpJSON(expected), utils.DumpJSON(md))
-	}
+	require.Equal(t, expected, md)
 
 	//
 	// 3. Test changing prefix
@@ -1527,47 +1456,30 @@ partitions:
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			mockFs, err := newMockResctrlFs(t, tc.fs, tc.fsMountOpts)
-			if err != nil {
-				t.Fatalf("failed to set up mock resctrl fs: %v", err)
-			}
+			require.NoError(t, err, "failed to set up mock resctrl fs")
 			defer mockFs.delete()
 
-			if err := Initialize(mockGroupPrefix); err != nil {
-				t.Fatalf("resctrl initialization failed: %v", err)
-			}
+			require.NoError(t, Initialize(mockGroupPrefix), "resctrl initialization failed")
 
 			err = SetConfigFromData([]byte(tc.config), false)
 			if tc.configErrRe != "" {
-				if err == nil {
-					t.Fatalf("resctrl configuration succeeded unexpectedly")
-				} else {
-					m, e := regexp.MatchString(tc.configErrRe, err.Error())
-					if e != nil {
-						t.Fatalf("error in regexp matching: %v", e)
-					}
-					if !m {
-						t.Fatalf("unexpected error message:\n  %q\n  does NOT match regexp\n  %q", err.Error(), tc.configErrRe)
-					}
-				}
+				require.Error(t, err, "resctrl configuration succeeded unexpectedly")
+
+				require.Regexp(t, tc.configErrRe, err.Error())
 			} else {
-				if err != nil {
-					t.Fatalf("resctrl configuration failed: %v", err)
-				}
+				require.NoError(t, err, "resctrl configuration failed")
 				verifySchemata(&tc)
 			}
 
 			// Check that SetConfig does not alter the config struct
 			conf := parseTestConfig(t, tc.config)
 			confDataOld, err := yaml.Marshal(conf)
-			if err != nil {
-				t.Fatalf("marshalling config failed: %v", err)
-			}
+			require.NoError(t, err, "marshalling config failed")
+
 			_ = SetConfig(conf, false)
-			if confDataNew, err := yaml.Marshal(conf); err != nil {
-				t.Fatalf("marshalling config failed: %v", err)
-			} else if !cmp.Equal(confDataNew, confDataOld) {
-				t.Fatalf("SetConfig altered config data:\n%s\nVS.\n%s", confDataOld, confDataNew)
-			}
+			confDataNew, err := yaml.Marshal(conf)
+			require.NoError(t, err, "marshalling config failed")
+			require.Equal(t, confDataOld, confDataNew)
 		})
 	}
 }
@@ -1586,19 +1498,12 @@ func TestBitMap(t *testing.T) {
 	}
 	for i, s := range testSet {
 		// Test conversion to string
-		listStr := i.listStr()
-		if listStr != s {
-			t.Errorf("from %#x expected %q, got %q", i, s, listStr)
-		}
+		require.Equal(t, s, i.listStr())
 
 		// Test conversion from string
 		b, err := listStrToBitmask(s)
-		if err != nil {
-			t.Errorf("unexpected err when converting %q: %v", s, err)
-		}
-		if b != i {
-			t.Errorf("from %q expected %#x, got %#x", s, i, b)
-		}
+		require.NoError(t, err)
+		require.Equal(t, i, b)
 	}
 
 	// Negative tests for ListStrToBitmask
@@ -1620,16 +1525,13 @@ func TestBitMap(t *testing.T) {
 	}
 	for _, s := range negTestSet {
 		b, err := listStrToBitmask(s)
-		if err == nil {
-			t.Errorf("expected err but got %#x when converting %q", b, s)
-		}
+		require.Error(t, err, "expected err but got %#x when converting %q", b, s)
 	}
 
 	// Test MarshalJSON
-	if s, err := bitmask(10).MarshalJSON(); err != nil {
-	} else if string(s) != `"0xa"` {
-		t.Errorf(`expected "0xa" but returned %s`, s)
-	}
+	s, err := bitmask(10).MarshalJSON()
+	require.NoError(t, err)
+	require.Equal(t, `"0xa"`, string(s))
 }
 
 func TestListStrToArray(t *testing.T) {
@@ -1645,12 +1547,8 @@ func TestListStrToArray(t *testing.T) {
 	for s, expected := range testSet {
 		// Test conversion from string to list of integers
 		a, err := listStrToArray(s)
-		if err != nil {
-			t.Errorf("unexpected error when converting %q: %v", s, err)
-		}
-		if !cmp.Equal(a, expected) {
-			t.Errorf("from %q expected %v, got %v", s, expected, a)
-		}
+		require.NoError(t, err, "unexpected error when converting %q: %v", s, err)
+		require.Equal(t, expected, a)
 	}
 
 	// Negative test cases
@@ -1674,9 +1572,7 @@ func TestListStrToArray(t *testing.T) {
 	}
 	for _, s := range negTestSet {
 		a, err := listStrToArray(s)
-		if err == nil {
-			t.Errorf("expected err but got %v when converting %q", a, s)
-		}
+		require.Error(t, err, "expected err but got %v when converting %q", a, s)
 	}
 }
 
@@ -1685,137 +1581,113 @@ func TestCacheAllocation(t *testing.T) {
 	// Need to setup resctrl and initialize because pct allocations need
 	// the "info" structure
 	mockFs, err := newMockResctrlFs(t, "resctrl.nomb", "")
-	if err != nil {
-		t.Fatalf("failed to set up mock resctrl fs: %v", err)
-	}
+	require.NoError(t, err, "failed to set up mock resctrl fs")
 	defer mockFs.delete()
 
-	if err := Initialize(mockGroupPrefix); err != nil {
-		t.Fatalf("resctrl initialization failed: %v", err)
-	}
+	require.NoError(t, Initialize(mockGroupPrefix), "resctrl initialization failed")
 
 	// Test absolute allocation
 	abs := catAbsoluteAllocation(0x7)
-	if res, err := abs.Overlay(0xf00, 1); err != nil {
-		t.Errorf("unexpected error when overlaying catAbsoluteAllocation: %v", err)
-	} else if res != 0x700 {
-		t.Errorf("expected 0x700 but got %#x when overlaying catAbsoluteAllocation", res)
-	}
+	res, err := abs.Overlay(0xf00, 1)
+	require.NoError(t, err)
+	require.Equal(t, bitmask(0x700), res)
 
-	if _, err := abs.Overlay(0, 1); err == nil {
-		t.Errorf("unexpected success when overlaying catAbsoluteAllocation with empty basemask")
-	}
+	_, err = abs.Overlay(0, 1)
+	require.Error(t, err, "unexpected success when overlaying catAbsoluteAllocation with empty basemask")
 
-	if _, err := abs.Overlay(0x30, 1); err == nil {
-		t.Errorf("unexpected success when overlaying too wide catAbsoluteAllocation")
-	}
+	_, err = abs.Overlay(0x30, 1)
+	require.Error(t, err, "unexpected success when overlaying too wide catAbsoluteAllocation")
 
-	if _, err := abs.Overlay(0xf0f, 1); err == nil {
-		t.Errorf("unexpected success when overlaying catAbsoluteAllocation with non-contiguous basemask")
-	}
+	_, err = abs.Overlay(0xf0f, 1)
+	require.Error(t, err, "unexpected success when overlaying catAbsoluteAllocation with non-contiguous basemask")
 
-	if _, err := catAbsoluteAllocation(0x1).Overlay(0x10, 2); err == nil {
-		t.Errorf("unexpected success when overlaying catAbsoluteAllocation with too small basemask")
-	}
+	_, err = catAbsoluteAllocation(0x1).Overlay(0x10, 2)
+	require.Error(t, err, "unexpected success when overlaying catAbsoluteAllocation with too small basemask")
 
 	// Test percentage allocation
-	if res, err := (catPctRangeAllocation{lowPct: 0, highPct: 100}).Overlay(0xff00, 4); err != nil {
-		t.Errorf("unexpected error when overlaying catPctAllocation: %v", err)
-	} else if res != 0xff00 {
-		t.Errorf("expected 0xff00 but got %#x when overlaying catPctAllocation", res)
-	}
-	if res, err := (catPctRangeAllocation{lowPct: 99, highPct: 100}).Overlay(0xff00, 4); err != nil {
-		t.Errorf("unexpected error when overlaying catPctAllocation: %v", err)
-	} else if res != 0xf000 {
-		t.Errorf("expected 0xf000 but got %#x when overlaying catPctAllocation", res)
-	}
-	if res, err := (catPctRangeAllocation{lowPct: 0, highPct: 1}).Overlay(0xff00, 4); err != nil {
-		t.Errorf("unexpected error when overlaying catPctAllocation: %v", err)
-	} else if res != 0xf00 {
-		t.Errorf("expected 0xf00 but got %#x when overlaying catPctAllocation", res)
-	}
-	if res, err := (catPctRangeAllocation{lowPct: 20, highPct: 30}).Overlay(0x3ff00, 4); err != nil {
-		t.Errorf("unexpected error when overlaying catPctAllocation: %v", err)
-	} else if res != 0xf00 {
-		t.Errorf("expected 0xf00 but got %#x when overlaying catPctAllocation", res)
-	}
-	if res, err := (catPctRangeAllocation{lowPct: 30, highPct: 60}).Overlay(0xf00, 4); err != nil {
-		t.Errorf("unexpected error when overlaying catPctAllocation: %v", err)
-	} else if res != 0xf00 {
-		t.Errorf("expected 0xf00 but got %#x when overlaying catPctAllocation", res)
-	}
-	if _, err := (catPctRangeAllocation{lowPct: 20, highPct: 10}).Overlay(0xff00, 4); err == nil {
-		t.Errorf("unexpected success when overlaying catPctAllocation of invalid percentage range")
-	}
-	if _, err := (catPctRangeAllocation{lowPct: 0, highPct: 100}).Overlay(0, 4); err == nil {
-		t.Errorf("unexpected success when overlaying catPctAllocation of invalid percentage range")
-	}
+	res, err = (catPctRangeAllocation{lowPct: 0, highPct: 100}).Overlay(0xff00, 4)
+	require.NoError(t, err)
+	require.Equal(t, bitmask(0xff00), res)
+
+	res, err = (catPctRangeAllocation{lowPct: 99, highPct: 100}).Overlay(0xff00, 4)
+	require.NoError(t, err)
+	require.Equal(t, bitmask(0xf000), res)
+
+	res, err = (catPctRangeAllocation{lowPct: 0, highPct: 1}).Overlay(0xff00, 4)
+	require.NoError(t, err)
+	require.Equal(t, bitmask(0xf00), res)
+
+	res, err = (catPctRangeAllocation{lowPct: 20, highPct: 30}).Overlay(0x3ff00, 4)
+	require.NoError(t, err)
+	require.Equal(t, bitmask(0xf00), res)
+
+	res, err = (catPctRangeAllocation{lowPct: 30, highPct: 60}).Overlay(0xf00, 4)
+	require.NoError(t, err)
+	require.Equal(t, bitmask(0xf00), res)
+
+	_, err = (catPctRangeAllocation{lowPct: 20, highPct: 10}).Overlay(0xff00, 4)
+	require.Error(t, err, "unexpected success when overlaying catPctAllocation of invalid percentage range")
+
+	_, err = (catPctRangeAllocation{lowPct: 0, highPct: 100}).Overlay(0, 4)
+	require.Error(t, err, "unexpected success when overlaying catPctAllocation of invalid percentage range")
 }
 
 func TestCacheProportion(t *testing.T) {
 	// Test percentage
-	if a, err := CacheProportion("10%").parse(2); err != nil {
-		t.Errorf("unexpected error when parsing cache allocation: %v", err)
-	} else if a != catPctAllocation(10) {
-		t.Errorf("expected 10%% but got %d%%", a)
-	}
-	if _, err := CacheProportion("1a%").parse(2); err == nil {
-		t.Errorf("unexpected success when parsing percentage cache allocation")
-	}
-	if _, err := CacheProportion("101%").parse(2); err == nil {
-		t.Errorf("unexpected success when parsing percentage cache allocation")
-	}
+	a, err := CacheProportion("10%").parse(2)
+	require.NoError(t, err)
+	require.Equal(t, catPctAllocation(10), a)
+
+	_, err = CacheProportion("1a%").parse(2)
+	require.Error(t, err, "unexpected success when parsing percentage cache allocation")
+
+	_, err = CacheProportion("101%").parse(2)
+	require.Error(t, err, "unexpected success when parsing percentage cache allocation")
 
 	// Test percentage ranges
-	if a, err := CacheProportion("10-20%").parse(2); err != nil {
-		t.Errorf("unexpected error when parsing cache allocation: %v", err)
-	} else if a != (catPctRangeAllocation{lowPct: 10, highPct: 20}) {
-		t.Errorf("expected {10 20} but got %v", a)
-	}
-	if _, err := CacheProportion("a-100%").parse(2); err == nil {
-		t.Errorf("unexpected success when parsing percentage range cache allocation")
-	}
-	if _, err := CacheProportion("0-1f%").parse(2); err == nil {
-		t.Errorf("unexpected success when parsing percentage range cache allocation")
-	}
-	if _, err := CacheProportion("20-10%").parse(2); err == nil {
-		t.Errorf("unexpected success when parsing percentage range cache allocation")
-	}
-	if _, err := CacheProportion("20-101%").parse(2); err == nil {
-		t.Errorf("unexpected success when parsing percentage range cache allocation")
-	}
+	a, err = CacheProportion("10-20%").parse(2)
+	require.NoError(t, err)
+	require.Equal(t, catPctRangeAllocation{lowPct: 10, highPct: 20}, a)
+
+	_, err = CacheProportion("a-100%").parse(2)
+	require.Error(t, err, "unexpected success when parsing percentage range cache allocation")
+
+	_, err = CacheProportion("0-1f%").parse(2)
+	require.Error(t, err, "unexpected success when parsing percentage range cache allocation")
+
+	_, err = CacheProportion("20-10%").parse(2)
+	require.Error(t, err, "unexpected success when parsing percentage range cache allocation")
+
+	_, err = CacheProportion("20-101%").parse(2)
+	require.Error(t, err, "unexpected success when parsing percentage range cache allocation")
 
 	// Test bitmask
-	if a, err := CacheProportion("0xf0").parse(2); err != nil {
-		t.Errorf("unexpected error when parsing cache allocation: %v", err)
-	} else if a != catAbsoluteAllocation(0xf0) {
-		t.Errorf("expected 0xf0 but got %#x", a)
-	}
-	if _, err := CacheProportion("0x40").parse(2); err == nil {
-		t.Errorf("unexpected success when parsing bitmask cache allocation")
-	}
-	if _, err := CacheProportion("0x11").parse(2); err == nil {
-		t.Errorf("unexpected success when parsing bitmask cache allocation")
-	}
-	if _, err := CacheProportion("0xg").parse(2); err == nil {
-		t.Errorf("unexpected success when parsing bitmask cache allocation")
-	}
+	a, err = CacheProportion("0xf0").parse(2)
+	require.NoError(t, err)
+	require.Equal(t, catAbsoluteAllocation(0xf0), a)
+
+	_, err = CacheProportion("0x40").parse(2)
+	require.Error(t, err, "unexpected success when parsing bitmask cache allocation")
+
+	_, err = CacheProportion("0x11").parse(2)
+	require.Error(t, err, "unexpected success when parsing bitmask cache allocation")
+
+	_, err = CacheProportion("0xg").parse(2)
+	require.Error(t, err, "unexpected success when parsing bitmask cache allocation")
 
 	// Test bit numbers
-	if a, err := CacheProportion("3,4,5-7,8").parse(2); err != nil {
-		t.Errorf("unexpected error when parsing cache allocation: %v", err)
-	} else if a != catAbsoluteAllocation(0x1f8) {
-		t.Errorf("expected 0x1f8 but got %#x", a)
-	}
-	if _, err := CacheProportion("3,5").parse(2); err == nil {
-		t.Errorf("unexpected success when parsing bitmask cache allocation")
-	}
-	if _, err := CacheProportion("1").parse(2); err == nil {
-		t.Errorf("unexpected success when parsing bitmask cache allocation")
-	}
-	if _, err := CacheProportion("3-x").parse(2); err == nil {
-		t.Errorf("unexpected success when parsing bitmask cache allocation")
-	}
+	a, err = CacheProportion("3,4,5-7,8").parse(2)
+	require.NoError(t, err)
+	require.Equal(t, catAbsoluteAllocation(0x1f8), a)
+
+	_, err = CacheProportion("3,5").parse(2)
+	require.Error(t, err, "unexpected success when parsing bitmask cache allocation")
+
+	_, err = CacheProportion("1").parse(2)
+	require.Error(t, err, "unexpected success when parsing bitmask cache allocation")
+
+	_, err = CacheProportion("3-x").parse(2)
+	require.Error(t, err, "unexpected success when parsing bitmask cache allocation")
 }
 
 func TestIsQualifiedClassName(t *testing.T) {
@@ -1830,8 +1702,7 @@ func TestIsQualifiedClassName(t *testing.T) {
 	}
 
 	for name, expected := range tcs {
-		if r := IsQualifiedClassName(name); r != expected {
-			t.Errorf("IsQualifiedClassName(%q) returned %v (expected %v)", name, r, expected)
-		}
+		r := IsQualifiedClassName(name)
+		require.Equal(t, expected, r, "IsQualifiedClassName(%q) returned %v (expected %v)", name, r, expected)
 	}
 }
