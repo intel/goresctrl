@@ -455,6 +455,120 @@ partitions:
 	verifyGroupNames(classes, []string{RootClassName})
 }
 
+func TestInfo(t *testing.T) {
+	tcs := []struct {
+		name         string
+		expectedInfo resctrlInfo
+	}{
+		{
+			name: "resctrl.full",
+			expectedInfo: resctrlInfo{
+				resctrlMountOpts: map[string]struct{}{},
+				numClosids:       8,
+				cat: map[cacheLevel]catInfoAll{
+					L2: catInfoAll{},
+					L3: catInfoAll{
+						cacheIds: []uint64{0, 1, 2, 3},
+						unified: catInfo{
+							numClosids:    16,
+							cbmMask:       bitmask(0xfffff),
+							minCbmBits:    1,
+							shareableBits: bitmask(0xc0000),
+						},
+					},
+				},
+				l3mon: l3MonInfo{
+					numRmids:    192,
+					monFeatures: []string{"llc_occupancy", "mbm_local_bytes", "mbm_total_bytes"},
+				},
+				mb: mbInfo{
+					cacheIds:      []uint64{0, 1, 2, 3},
+					numClosids:    8,
+					bandwidthGran: 10,
+					delayLinear:   1,
+					minBandwidth:  10,
+					mbpsEnabled:   false,
+				},
+			},
+		},
+		{
+			name: "resctrl.nol3",
+			expectedInfo: resctrlInfo{
+				resctrlMountOpts: map[string]struct{}{},
+				numClosids:       8,
+				cat: map[cacheLevel]catInfoAll{
+					L2: catInfoAll{},
+					L3: catInfoAll{},
+				},
+				l3mon: l3MonInfo{
+					numRmids:    192,
+					monFeatures: []string{"llc_occupancy", "mbm_local_bytes", "mbm_total_bytes"},
+				},
+				mb: mbInfo{
+					cacheIds:      []uint64{0, 1, 2, 3},
+					numClosids:    8,
+					bandwidthGran: 10,
+					delayLinear:   1,
+					minBandwidth:  10,
+					mbpsEnabled:   false,
+				},
+			},
+		},
+		{
+			name: "resctrl.l2l3mb",
+			expectedInfo: resctrlInfo{
+				resctrlMountOpts: map[string]struct{}{},
+				numClosids:       8,
+				cat: map[cacheLevel]catInfoAll{
+					L2: catInfoAll{
+						cacheIds: []uint64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39},
+						unified: catInfo{
+							numClosids:    8,
+							cbmMask:       bitmask(0xffff),
+							minCbmBits:    1,
+							shareableBits: bitmask(0),
+						},
+					},
+					L3: catInfoAll{
+						cacheIds: []uint64{0, 1},
+						unified: catInfo{
+							numClosids:    15,
+							cbmMask:       bitmask(0xfffff),
+							minCbmBits:    1,
+							shareableBits: bitmask(0xc0001),
+						},
+					},
+				},
+				l3mon: l3MonInfo{
+					numRmids:    512,
+					monFeatures: []string{"llc_occupancy", "mbm_local_bytes", "mbm_total_bytes"},
+				},
+				mb: mbInfo{
+					cacheIds:      []uint64{0, 1},
+					numClosids:    15,
+					bandwidthGran: 10,
+					delayLinear:   1,
+					minBandwidth:  10,
+					mbpsEnabled:   false,
+				},
+			},
+		},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			mockFs, err := newMockResctrlFs(t, tc.name, "")
+			require.NoError(t, err, "failed to set up mock resctrl fs")
+			defer mockFs.delete()
+
+			require.NoError(t, Initialize(""))
+
+			info.resctrlPath = ""
+			require.Equal(t, tc.expectedInfo, *info)
+		})
+	}
+}
+
 // TestConfig tests configuration parsing and resolving
 func TestConfig(t *testing.T) {
 	type Schemata struct {
