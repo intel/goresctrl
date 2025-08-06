@@ -380,6 +380,38 @@ partitions:
 	expected := MonData{
 		L3: MonL3Data{
 			0: MonLeafData{
+				"llc_occupancy":   100,
+				"mbm_local_bytes": 101,
+				"mbm_total_bytes": 102,
+				"xxx_new_metric":  1000,
+			},
+			1: MonLeafData{
+				"llc_occupancy":   110,
+				"mbm_local_bytes": 111,
+				"mbm_total_bytes": 112,
+				"xxx_new_metric":  1100,
+			},
+			2: MonLeafData{
+				"llc_occupancy":   120,
+				"mbm_local_bytes": 121,
+				"mbm_total_bytes": 122,
+				"xxx_new_metric":  1200,
+			},
+			3: MonLeafData{
+				"llc_occupancy":   130,
+				"mbm_local_bytes": 131,
+				"mbm_total_bytes": 132,
+				"xxx_new_metric":  1300,
+			},
+		},
+	}
+
+	md := c.GetMonData()
+	require.Equal(t, expected, md)
+
+	expected = MonData{
+		L3: MonL3Data{
+			0: MonLeafData{
 				"llc_occupancy":   1,
 				"mbm_local_bytes": 2,
 				"mbm_total_bytes": 3,
@@ -401,7 +433,7 @@ partitions:
 			},
 		},
 	}
-	md := mg.GetMonData()
+	md = mg.GetMonData()
 	require.Equal(t, expected, md)
 
 	//
