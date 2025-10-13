@@ -1,9 +1,18 @@
 GO_CMD := go
+CMDS := $(shell ls cmd)
 
 Q := @
 
+FORCE:
+
 .PHONY: all
-all: test
+all: test build
+
+.PHONY: build
+build: $(foreach cmd,$(CMDS),bin/$(cmd))
+
+bin/%: FORCE
+	$(GO_CMD) build -o $@ ./cmd/$(notdir $@)
 
 .PHONY: verify
 verify: gofmt-verify ci-lint
