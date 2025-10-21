@@ -3,13 +3,13 @@ CMDS := $(shell ls cmd)
 
 Q := @
 
-FORCE:
-
 .PHONY: all
 all: test build
 
 .PHONY: build
 build: $(foreach cmd,$(CMDS),bin/$(cmd))
+
+FORCE:
 
 bin/%: FORCE
 	$(GO_CMD) build -o $@ ./cmd/$(notdir $@)
