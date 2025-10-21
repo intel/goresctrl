@@ -32,21 +32,22 @@ limitations under the License.
 // 1. List disabled C-states for all CPUs
 //
 //    cs, err := cstates.NewCstatesFromSysfs(
-//        cstates.FilterAttrValues(cstates.AttrDisable, "1"),
+//        cstates.NewBasicFilter().SetAttributeValues(cstates.AttrDisable, "1"),
 //    )
 //    if err != nil {
 //        log.Fatal(err)
 //    }
 //    for _, name := range cs.Names() {
-//        fmt.Printf("%s disabled in %s\n", name, cs.Copy(cstates.FilterNames(name)).CPUs())
+//        fmt.Printf("%s disabled in %s\n", name,
+//        	cs.Copy(cstates.NewBasicFilter().SetCstateNames(name)).CPUs())
 //    }
 //
 // 2. Disable C6, C8 and C10 C-states for CPUs 0-3
 //
-//    cs, err := cstates.NewCstatesFromSysfs(
-//        cstates.FilterCPUs(0, 1, 2, 3),
-//        cstates.FilterNames("C6", "C8", "C10"),
-//        cstates.FilterAttrs(cstates.AttrDisable),
+//    cs, err := cstates.NewCstatesFromSysfs(cstates.NewBasicFilter().
+//    	  SetCPUs(0, 1, 2, 3).
+//        SetCstateNames("C6", "C8", "C10").
+//        SetAttributes(cstates.AttrDisable)
 //    )
 //    if err != nil {
 //        log.Fatal(err)
@@ -215,14 +216,13 @@ func (c *Cstate) AttrCount() int {
 // Copy returns a new Cstate instance containing a copy attribute
 // values. If filters are given, only matching attributes will be
 // copied and while others will be nil.
-func (c *Cstate) Copy(filters ...CstatesFilter) *Cstate {
+func (c *Cstate) Copy(filter Filter) *Cstate {
 	newC := NewCstate(c.name, c.cpu, c.state)
-	allFilters := FilterAll(filters...)
 	for attr, val := range c.attrVal {
 		if val == nil {
 			continue
 		}
-		if !allFilters(c.cpu, c.name, AttrID(attr), val) {
+		if !filter.Match(NewFilterInput().SetCPU(c.cpu).SetCstateName(c.name).SetAttributeValue(AttrID(attr), *val)) {
 			continue
 		}
 		// no need to copy contents of an immutable string
@@ -259,10 +259,10 @@ func (c *Cstates) SetFs(fs sysfsIface) {
 // C-state information from sysfs.
 //
 // If filters are given, only matching C-states and attributes are read.
-func NewCstatesFromSysfs(filters ...CstatesFilter) (*Cstates, error) {
+func NewCstatesFromSysfs(filter Filter) (*Cstates, error) {
 	cs := NewCstates()
 	cs.SetFs(NewSysfs())
-	if err := cs.Read(filters...); err != nil {
+	if err := cs.Read(filter); err != nil {
 		return nil, err
 	}
 	return cs, nil
@@ -270,7 +270,7 @@ func NewCstatesFromSysfs(filters ...CstatesFilter) (*Cstates, error) {
 
 // Read populates the Cstates instance from filesystem that
 // implements the sysfsIface interface.
-func (cs *Cstates) Read(filters ...CstatesFilter) error {
+func (cs *Cstates) Read(filter Filter) error {
 	// stateName maps state to C-state name, e.g. 2 -> "C1E", if cpuidle/state2/name == "C1E"
 	var stateName map[int]string
 	cpusStr, err := cs.fs.PossibleCpus()
@@ -282,10 +282,8 @@ func (cs *Cstates) Read(filters ...CstatesFilter) error {
 		return err
 	}
 
-	allFilters := FilterAll(filters...)
-
 	for _, cpu := range cpus.SortedMembers() {
-		if !allFilters(cpu, "", -1, nil) {
+		if !filter.Match(NewFilterInput().SetCPU(cpu)) {
 			continue
 		}
 		// cache stateName and attrFiles to be used for all CPUs
@@ -308,19 +306,20 @@ func (cs *Cstates) Read(filters ...CstatesFilter) error {
 		}
 
 		for state, cstateName := range stateName {
-			if !allFilters(cpu, cstateName, -1, nil) {
+
+			if !filter.Match(NewFilterInput().SetCPU(cpu).SetCstateName(cstateName)) {
 				continue
 			}
 			cstate := NewCstate(cstateName, cpu, state)
 			for _, attr := range attributes {
-				if !allFilters(cpu, cstateName, attr.id, nil) {
+				if !filter.Match(NewFilterInput().SetCPU(cpu).SetCstateName(cstateName).SetAttribute(attr.id)) {
 					continue
 				}
 				value, err := cs.fs.CpuidleStateAttrRead(cpu, state, attr.name)
 				if err != nil {
 					return err
 				}
-				if !allFilters(cpu, cstateName, attr.id, &value) {
+				if !filter.Match(NewFilterInput().SetCPU(cpu).SetCstateName(cstateName).SetAttributeValue(attr.id, value)) {
 					continue
 				}
 				cstate.setAttr(attr.id, &value)
@@ -364,15 +363,14 @@ func (cs *Cstates) Names() []string {
 // C-states. If filters are given, result includes only matching
 // C-states with matching attributes and values, and C-states without
 // attributes are omitted.
-func (cs *Cstates) Copy(filters ...CstatesFilter) *Cstates {
+func (cs *Cstates) Copy(filter Filter) *Cstates {
 	newCs := NewCstates()
 	newCs.fs = cs.fs
-	allFilters := FilterAll(filters...)
 	for _, cstate := range cs.cstates {
-		if !allFilters(cstate.cpu, cstate.name, -1, nil) {
+		if !filter.Match(NewFilterInput().SetCPU(cstate.cpu).SetCstateName(cstate.name)) {
 			continue
 		}
-		newCstate := cstate.Copy(filters...)
+		newCstate := cstate.Copy(filter)
 		if newCstate.AttrCount() == 0 {
 			continue
 		}
