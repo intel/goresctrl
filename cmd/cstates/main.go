@@ -79,7 +79,7 @@ func subCmdHelp(args []string) error {
 }
 
 func subCmdLs(args []string) error {
-	var filters []cstates.CstatesFilter
+	var filter cstates.BasicFilter
 	var optCpus string
 	var optListAbove bool
 	var optListBelow bool
@@ -115,10 +115,10 @@ func subCmdLs(args []string) error {
 		if err != nil {
 			return fmt.Errorf("invalid CPU list %q: %v", optCpus, err)
 		}
-		filters = append(filters, cstates.FilterCPUs(cpus.Members()...))
+		filter.SetCPUs(cpus.Members()...)
 	}
 	if optNames != "" {
-		filters = append(filters, cstates.FilterNames(strings.Split(optNames, ",")...))
+		filter.SetCstateNames(strings.Split(optNames, ",")...)
 	}
 	if optListAll {
 		optListAbove = true
@@ -147,11 +147,11 @@ func subCmdLs(args []string) error {
 		readAttrs = append(readAttrs, cstates.AttrLatency)
 	}
 	if len(readAttrs) > 0 {
-		filters = append(filters, cstates.FilterAttrs(readAttrs...))
+		filter.SetAttributes(readAttrs...)
 	}
 
 	// Create a new cstates controller
-	cs, err := cstates.NewCstatesFromSysfs(filters...)
+	cs, err := cstates.NewCstatesFromSysfs(&filter)
 	if err != nil {
 		return fmt.Errorf("error creating cstates controller: %v", err)
 	}
@@ -160,14 +160,14 @@ func subCmdLs(args []string) error {
 	names := cs.Names()
 	for _, name := range names {
 		printed := false
-		csName := cs.Copy(cstates.FilterNames(name))
+		csName := cs.Copy(cstates.NewBasicFilter().SetCstateNames(name))
 		if optSummarizeDisabled {
-			csDisabled := csName.Copy(cstates.FilterAttrValues(cstates.AttrDisable, "1"))
+			csDisabled := csName.Copy(cstates.NewBasicFilter().SetAttributeValues(cstates.AttrDisable, "1"))
 			fmt.Printf("%s disabled: %s\n", name, csDisabled.CPUs())
 			printed = true
 		}
 		if optSummarizeEnabled {
-			csEnabled := csName.Copy(cstates.FilterAttrValues(cstates.AttrDisable, "0"))
+			csEnabled := csName.Copy(cstates.NewBasicFilter().SetAttributeValues(cstates.AttrDisable, "0"))
 			fmt.Printf("%s enabled: %s\n", name, csEnabled.CPUs())
 			printed = true
 		}
@@ -205,7 +205,7 @@ func subCmdLs(args []string) error {
 }
 
 func subCmdSet(args []string) error {
-	var filters []cstates.CstatesFilter
+	var filter cstates.BasicFilter
 	var optCpus string
 	var optDisable bool
 	var optEnable bool
@@ -225,14 +225,14 @@ func subCmdSet(args []string) error {
 		if err != nil {
 			return fmt.Errorf("invalid CPU list %q: %v", optCpus, err)
 		}
-		filters = append(filters, cstates.FilterCPUs(cpus.Members()...))
+		filter.SetCPUs(cpus.Members()...)
 	}
 	if optNames != "" {
-		filters = append(filters, cstates.FilterNames(strings.Split(optNames, ",")...))
+		filter.SetCstateNames(strings.Split(optNames, ",")...)
 	}
 	if optDisable || optEnable {
-		filters = append(filters, cstates.FilterAttrs(cstates.AttrDisable))
-		cs, err := cstates.NewCstatesFromSysfs(filters...)
+		filter.SetAttributes(cstates.AttrDisable)
+		cs, err := cstates.NewCstatesFromSysfs(&filter)
 		if err != nil {
 			return fmt.Errorf("error reading cstates: %w", err)
 		}

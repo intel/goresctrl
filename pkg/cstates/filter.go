@@ -18,84 +18,132 @@ package cstates
 
 import "github.com/intel/goresctrl/pkg/utils"
 
-// CstatesFilter returns true for accepted value combinations.
-type CstatesFilter func(cpuid utils.ID, cstateName string, attr AttrID, val *string) bool
+type FilterInputOpt func(*FilterInput)
 
-// FilterCPUs returns a filter that accepts only the specified CPU IDs.
-func FilterCPUs(ids ...utils.ID) CstatesFilter {
-	idset := utils.NewIDSet(ids...)
-	return func(cpuid utils.ID, cstateName string, attr AttrID, val *string) bool {
-		return idset.Has(cpuid)
-	}
+// Filter defines the interface for filtering cstate data.
+type Filter interface {
+	// Match returns true if the given arguments match the filter criteria
+	Match(*FilterInput) bool
 }
 
-// FilterAttrs returns a filter that accepts only the specified attribute IDs.
-func FilterAttrs(attributes ...AttrID) CstatesFilter {
-	attrs := make(map[AttrID]bool, len(attributes)+1)
-	for _, attr := range attributes {
-		attrs[attr] = true
+// FilterInput holds the input values for evaluating the filter. All fields are
+// optional. Nil values indicate "not defined" and should be ignored in filter
+// evaluation.
+type FilterInput struct {
+	CPU            *utils.ID
+	CstateName     *string
+	Attribute      *AttrID
+	AttributeValue *string
+}
+
+// BasicFilter implements a simple filter based on CPU IDs, cstate names and attributes.
+type BasicFilter struct {
+	cpus        map[utils.ID]bool
+	cstateNames map[string]bool
+	attributes  map[AttrID]map[string]bool
+}
+
+func NewBasicFilter() *BasicFilter {
+	return &BasicFilter{}
+}
+
+// SetCPUs sets the CPU IDs accepted by the filter.
+func (f *BasicFilter) SetCPUs(cpus ...utils.ID) *BasicFilter {
+	f.cpus = (make(map[utils.ID]bool, len(cpus)))
+	for _, cpu := range cpus {
+		f.cpus[cpu] = true
 	}
-	return func(cpuid utils.ID, cstateName string, attr AttrID, val *string) bool {
-		if attr == -1 {
-			return true
+	return f
+}
+
+// SetCstateNames sets the cstate names accepted by the filter.
+func (f *BasicFilter) SetCstateNames(names ...string) *BasicFilter {
+	f.cstateNames = make(map[string]bool, len(names))
+	for _, name := range names {
+		f.cstateNames[name] = true
+	}
+	return f
+}
+
+// SetAttributes sets the attribute IDs accepted by the filter.
+func (f *BasicFilter) SetAttributes(attrs ...AttrID) *BasicFilter {
+	f.attributes = make(map[AttrID]map[string]bool, len(attrs))
+	for _, attr := range attrs {
+		if f.attributes[attr] == nil {
+			f.attributes[attr] = make(map[string]bool)
 		}
-		return attrs[attr]
+	}
+	return f
+}
+
+// SetAttributeValues sets the values of a given attribute accepted by the filter.
+func (f *BasicFilter) SetAttributeValues(attr AttrID, values ...string) *BasicFilter {
+	if f.attributes == nil {
+		f.attributes = make(map[AttrID]map[string]bool)
+	}
+	f.attributes[attr] = make(map[string]bool, len(values))
+	for _, value := range values {
+		f.attributes[attr][value] = true
+	}
+	return f
+}
+
+// Match evaluates the filter against the provided input arguments. Implements a logical AND of all filter criteria.
+func (f *BasicFilter) Match(args *FilterInput) bool {
+	return f.evaluateCPU(args.CPU) && f.evaluateCstateName(args.CstateName) && f.evaluateAttribute(args.Attribute) && f.evaluateAttributeValue(args.Attribute, args.AttributeValue)
+}
+
+func (f *BasicFilter) evaluateCPU(cpu *utils.ID) bool {
+	return cpu == nil || len(f.cpus) == 0 || f.cpus[*cpu]
+}
+
+func (f *BasicFilter) evaluateCstateName(name *string) bool {
+	return name == nil || len(f.cstateNames) == 0 || f.cstateNames[*name]
+}
+
+func (f *BasicFilter) evaluateAttribute(attr *AttrID) bool {
+	return attr == nil || len(f.attributes) == 0 || f.attributes[*attr] != nil
+}
+
+func (f *BasicFilter) evaluateAttributeValue(attr *AttrID, value *string) bool {
+	return attr == nil || value == nil || len(f.attributes) == 0 || len(f.attributes[*attr]) == 0 || f.attributes[*attr][*value]
+}
+
+// NewFilterInput creates a new FilterInput instance.
+func NewFilterInput(opts ...FilterInputOpt) *FilterInput {
+	f := &FilterInput{}
+	for _, opt := range opts {
+		opt(f)
+	}
+	return f
+}
+
+// WithCPU sets the CPU ID in the FilterInput.
+func WithCPU(cpu utils.ID) FilterInputOpt {
+	return func(f *FilterInput) {
+		f.CPU = &cpu
 	}
 }
 
-// FilterNames returns a filter that accepts only the specified C-state names.
-func FilterNames(cstateNames ...string) CstatesFilter {
-	names := make(map[string]bool, len(cstateNames)+1)
-	names[""] = true
-	for _, name := range cstateNames {
-		names[name] = true
-	}
-	return func(cpuid utils.ID, cstateName string, attr AttrID, val *string) bool {
-		return names[cstateName]
+// WithCstateName sets the cstate name in the FilterInput.
+func WithCstateName(name string) FilterInputOpt {
+	return func(f *FilterInput) {
+		f.CstateName = &name
 	}
 }
 
-// FilterAttrValues returns a filter that accepts only the specified values for a given attribute ID.
-func FilterAttrValues(attribute AttrID, values ...string) CstatesFilter {
-	vals := make(map[string]bool, len(values))
-	for _, v := range values {
-		vals[v] = true
-	}
-	return func(cpuid utils.ID, cstateName string, attr AttrID, val *string) bool {
-		if attr == -1 || val == nil {
-			return true
-		}
-		return attr == attribute && vals[*val]
+// WithAttribute sets the attribute ID in the FilterInput.
+func WithAttribute(attr AttrID) FilterInputOpt {
+	return func(f *FilterInput) {
+		f.Attribute = &attr
+		f.AttributeValue = nil
 	}
 }
 
-// FilterAll returns a filter that accepts only if all the provided filters accept.
-func FilterAll(filters ...CstatesFilter) CstatesFilter {
-	return func(cpuid utils.ID, cstateName string, attr AttrID, val *string) bool {
-		for _, f := range filters {
-			if !f(cpuid, cstateName, attr, val) {
-				return false
-			}
-		}
-		return true
-	}
-}
-
-// FilterAny returns a filter that accepts if any of the provided filters accept.
-func FilterAny(filters ...CstatesFilter) CstatesFilter {
-	return func(cpuid utils.ID, cstateName string, attr AttrID, val *string) bool {
-		for _, f := range filters {
-			if f(cpuid, cstateName, attr, val) {
-				return true
-			}
-		}
-		return false
-	}
-}
-
-// FilterInverse returns a filter that inverts the result of the provided filter.
-func FilterInverse(filter CstatesFilter) CstatesFilter {
-	return func(cpuid utils.ID, cstateName string, attr AttrID, val *string) bool {
-		return !filter(cpuid, cstateName, attr, val)
+// WithAttributeValue sets the attribute ID and value in the FilterInput.
+func WithAttributeValue(attr AttrID, value string) FilterInputOpt {
+	return func(f *FilterInput) {
+		f.Attribute = &attr
+		f.AttributeValue = &value
 	}
 }
