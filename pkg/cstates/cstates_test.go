@@ -66,7 +66,7 @@ func TestNewCstatesFromSysfs(t *testing.T) {
 	cpuCount := cpus.Size()
 
 	// Read the disable attribute from all C-states of all CPUs.
-	cs, err := NewCstatesFromSysfs(FilterAttrs(AttrDisable))
+	cs, err := NewCstatesFromSysfs(NewBasicFilter().SetAttributes(AttrDisable))
 	require.NoError(t, err, "NewCstatesFromSysfs failed")
 
 	// Compare read CPUs to the number of possible CPUs.
@@ -113,7 +113,7 @@ func TestCstatesWithMockFS(t *testing.T) {
 		},
 	}
 	cs.fs = fs
-	err := cs.Read(FilterCPUs(2, 3, 4, 5), FilterNames("C1", "C2", "C4"), FilterAttrs(AttrDisable, AttrTime))
+	err := cs.Read(NewBasicFilter().SetCPUs(2, 3, 4, 5).SetCstateNames("C1", "C2", "C4").SetAttributes(AttrDisable, AttrTime))
 	require.NoError(t, err, "Failed to populate C-states from sysfs")
 
 	// Whatever happens next, nothing must be read from sysfs anymore.
@@ -146,12 +146,12 @@ func TestCstatesWithMockFS(t *testing.T) {
 	require.Equal(t, *cpu5c4time, "10054")
 
 	// Find which CPUs have C2, C3 (not even present) or C4 disabled.
-	c2Disabled := cs.Copy(FilterNames("C2", "C3", "C4"), FilterAttrValues(AttrDisable, "1"))
+	c2Disabled := cs.Copy(NewBasicFilter().SetCstateNames("C2", "C3", "C4").SetAttributes(AttrDisable).SetAttributeValues(AttrDisable, "1"))
 	require.Equal(t, c2Disabled.CPUs().Members(), []utils.ID{3}, "CPU3, and only it, must have C2 disabled")
 
 	// Enable C2 on CPU3.
 	cpu3C2disable := "x"
-	csFiltered := cs.Copy(FilterCPUs(3), FilterNames("C2"))
+	csFiltered := cs.Copy(NewBasicFilter().SetCPUs(3).SetCstateNames("C2"))
 	// Override the fs write function to capture expected write, fail on all other writes.
 	fs.fCpuidleStateAttrWrite = func(cpu utils.ID, state int, attr string, value string) error {
 		if cpu == 3 && state == 2 && attr == "disable" {
