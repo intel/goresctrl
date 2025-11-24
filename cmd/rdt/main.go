@@ -19,6 +19,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -32,6 +33,16 @@ import (
 	"github.com/intel/goresctrl/pkg/rdt"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
+
+	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
+
+	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
+	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
 )
 
 var (
@@ -209,14 +220,25 @@ func subCmdConfigure(args []string) error {
 
 func subCmdMonitor(args []string) error {
 	// Parse command line args
-	flags := flag.NewFlagSet("configure", flag.ExitOnError)
-	addGlobalFlags(flags)
+	var (
+		flags = flag.NewFlagSet("configure", flag.ExitOnError)
+		port  = flags.Int("port", 8080, "port to serve metrics on")
+		ohttp = flags.Bool("otel-http", false, "enable OpenTelemetry/HTTP export")
+		ogrpc = flags.Bool("otel-grpc", false, "enable OpenTelemetry/gRPC export")
+		otext = flags.Duration("otel-text", 0, "OpenTelemetry/stdout export period")
+		oprom = flags.Bool("otel-prom", false, "enable OpenTelemetry/Prometheus export")
+	)
 
-	port := flags.Int("port", 8080, "port to serve metrics on")
+	addGlobalFlags(flags)
 
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+
+	const (
+		nativePrometheus = "/metrics"
+		otelPrometheus   = "/otel-metrics"
+	)
 
 	// Run sub-command
 	if err := rdt.Initialize(groupPrefix); err != nil {
@@ -225,7 +247,99 @@ func subCmdMonitor(args []string) error {
 
 	prometheusRegistry := prometheus.NewRegistry()
 	prometheusRegistry.MustRegister(rdt.NewCollector())
-	http.Handle("/metrics", promhttp.HandlerFor(prometheusRegistry, promhttp.HandlerOpts{}))
+	http.Handle(nativePrometheus, promhttp.HandlerFor(prometheusRegistry, promhttp.HandlerOpts{}))
+
+	if *ohttp || *ogrpc || *otext != 0 || *oprom {
+		resource, err := resource.Merge(
+			resource.Default(),
+			resource.NewWithAttributes(
+				semconv.SchemaURL,
+				semconv.ServiceName("rdt.monitor"),
+			),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create OpenTelemetry resource: %w", err)
+		}
+
+		var (
+			ctx     = context.Background()
+			readers = []metric.Option{}
+		)
+
+		if *ohttp {
+			fmt.Printf("Setting up OpenTelemetry/HTTP metric exporter...\n")
+
+			exp, err := otlpmetrichttp.New(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to create OpenTelemetry HTTP exporter: %w", err)
+			}
+			readers = append(readers, metric.WithReader(metric.NewPeriodicReader(exp)))
+		}
+
+		if *ogrpc {
+			fmt.Printf("Setting up OpenTelemetry/gRPC metric exporter...\n")
+
+			exp, err := otlpmetricgrpc.New(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to create OpenTelemetry gRPC exporter: %w", err)
+			}
+			readers = append(readers, metric.WithReader(metric.NewPeriodicReader(exp)))
+		}
+
+		if *otext != 0 {
+			fmt.Printf("Setting up OpenTelemetry/stdout metric exporter...\n")
+
+			exp, err := stdoutmetric.New(
+				stdoutmetric.WithPrettyPrint(),
+				stdoutmetric.WithoutTimestamps(),
+			)
+			if err != nil {
+				return fmt.Errorf("failed to create OpenTelemetry stdout exporter: %w", err)
+			}
+			readers = append(readers,
+				metric.WithReader(
+					metric.NewPeriodicReader(exp, metric.WithInterval(*otext)),
+				),
+			)
+		}
+
+		if *oprom {
+			fmt.Printf("Setting up OpenTelemetry Prometheus exporter (HTTP %q)...\n", otelPrometheus)
+			registry := prometheus.NewRegistry()
+
+			exp, err := otelprom.New(
+				otelprom.WithNamespace(""),
+				otelprom.WithoutScopeInfo(),
+				otelprom.WithoutTargetInfo(),
+				otelprom.WithRegisterer(registry),
+			)
+			if err != nil {
+				return fmt.Errorf("failed to create OpenTelemetry Prometheus exporter: %w", err)
+			}
+
+			readers = append(readers, metric.WithReader(exp))
+
+			handlerOpts := promhttp.HandlerOpts{
+				ErrorHandling: promhttp.ContinueOnError,
+			}
+			http.Handle(otelPrometheus, promhttp.HandlerFor(registry, handlerOpts))
+		}
+
+		provider := metric.NewMeterProvider(
+			append([]metric.Option{metric.WithResource(resource)}, readers...)...,
+		)
+		defer func() {
+			if err := provider.Shutdown(ctx); err != nil {
+				slog.Error("failed to shutdown OpenTelemetry provider",
+					slog.String("error", err.Error()))
+			}
+		}()
+
+		meter := provider.Meter("rtd-monitor")
+		if err := rdt.RegisterOpenTelemetryInstruments(meter); err != nil {
+			return fmt.Errorf("failed to register OpenTelemetry instruments: %w", err)
+		}
+	}
 
 	fmt.Printf("Serving prometheus metrics at :%d/metrics\n", *port)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
