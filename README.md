@@ -1,6 +1,6 @@
 # Go Resource Control
 
-The goresctrl library provides Go interface to manage following resources.
+The goresctrl library provides Go interface to manage the following resources.
 
 - CPU cache allocation and memory bandwidth, see the [rdt](doc/rdt.md)
   (Intel Resource Director Technology) package.
