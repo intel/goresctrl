@@ -19,10 +19,10 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
     - name: Checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
     - name: Run Trivy in fs mode
-      uses: aquasecurity/trivy-action@master
+      uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
       with:
         scan-type: fs
         scan-ref: .
@@ -36,11 +36,11 @@ jobs:
       security-events: write
     steps:
     - name: Checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
     - name: Run Trivy in fs mode
       continue-on-error: true
-      uses: aquasecurity/trivy-action@master
+      uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
       with:
         scan-type: fs
         scan-ref: .
@@ -50,7 +50,7 @@ jobs:
         output: trivy-report.json
 
     - name: Show report in human-readable format
-      uses: aquasecurity/trivy-action@master
+      uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
       with:
         scan-type: convert
         vuln-type: ''
@@ -60,7 +60,7 @@ jobs:
 
     - name: Convert report to sarif format
       if: ${{ inputs.upload-to-github-security-tab }}
-      uses: aquasecurity/trivy-action@master
+      uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
       with:
         scan-type: convert
         vuln-type: ''
@@ -71,13 +71,13 @@ jobs:
 
     - name: Upload sarif report to GitHub Security tab
       if: ${{ inputs.upload-to-github-security-tab }}
-      uses: github/codeql-action/upload-sarif@v4
+      uses: github/codeql-action/upload-sarif@3d8036cf7fe7433e4a725cf513a6ea56c7fd0f14 # codeql-bundle-v2.25.0
       with:
        sarif_file: trivy-report.sarif
 
     - name: Convert report to csv
       if: ${{ inputs.export-csv }}
-      uses: aquasecurity/trivy-action@master
+      uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
       with:
         scan-type: convert
         vuln-type: ''
@@ -89,7 +89,7 @@ jobs:
 
     - name: Upload CSV report as an artifact
       if: ${{ inputs.export-csv }}
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       with:
         name: trivy-report
         path: trivy-report.csv
