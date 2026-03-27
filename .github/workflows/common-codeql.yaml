@@ -17,26 +17,26 @@ jobs:
       security-events: write
     steps:
     - name: Checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v4
+      uses: github/codeql-action/init@3d8036cf7fe7433e4a725cf513a6ea56c7fd0f14 # codeql-bundle-v2.25.0
       with:
         languages: go
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v4
+      uses: github/codeql-action/analyze@3d8036cf7fe7433e4a725cf513a6ea56c7fd0f14 # codeql-bundle-v2.25.0
 
     - name: Generate CodeQL Security Report
       if: ${{ inputs.export-report }}
-      uses: rsdmike/github-security-report-action@v3.0.4
+      uses: rsdmike/github-security-report-action@a149b24539044c92786ec39af8ba38c93496495d # v3.0.4
       with:
         template: report
         token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Upload PDF report as an artifact
       if: ${{ inputs.export-report }}
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       with:
         name: codeql-report
         path: report.pdf
