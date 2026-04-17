@@ -28,7 +28,6 @@ import (
 
 	"github.com/intel/goresctrl/pkg/log"
 	goresctrlpath "github.com/intel/goresctrl/pkg/path"
-	"github.com/intel/goresctrl/pkg/rdt"
 	"github.com/intel/goresctrl/pkg/sst"
 	"github.com/intel/goresctrl/pkg/utils"
 )
@@ -73,7 +72,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	rdt.SetLogger(slog.New(log.NewLogHandler(logLevel)))
+	sst.SetLogger(slog.New(log.NewLogHandler(logLevel)))
 
 	args := flag.Args()
 	if len(args) < 1 {
