@@ -25,5 +25,9 @@ func subCmdInfo(args []string) error {
 		return err
 	}
 
-	return printPackageInfo(str2slice(packageIds)...)
+	pkgs, err := str2slice(packageIds)
+	if err != nil {
+		return err
+	}
+	return printPackageInfo(pkgs...)
 }
