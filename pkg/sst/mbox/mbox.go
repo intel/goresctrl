@@ -295,6 +295,22 @@ func BFReadCoreMask(cpu uint16, ppCurrentLevel, maskIndex int) (uint32, error) {
 	return rsp, nil
 }
 
+// TFSetStatus enables or disables SST-TF via the Mbox interface.
+func TFSetStatus(cpu uint16, ppCurrentLevel int, enable bool) error {
+	rsp, err := isst.SendMboxCmd(cpu, isst.CONFIG_TDP, isst.CONFIG_TDP_GET_TDP_CONTROL, 0, uint32(ppCurrentLevel))
+	if err != nil {
+		return fmt.Errorf("failed to read SST status: %w", err)
+	}
+	req := clearBit(rsp, 16)
+	if enable {
+		req = setBit(rsp, 16)
+	}
+	if _, err = isst.SendMboxCmd(cpu, isst.CONFIG_TDP, isst.CONFIG_TDP_SET_TDP_CONTROL, 0, req); err != nil {
+		return fmt.Errorf("failed to set SST TF: %w", err)
+	}
+	return nil
+}
+
 // getBits extracts bits i..j (inclusive) from val.
 func getBits(val, i, j uint32) uint32 {
 	lsb := i

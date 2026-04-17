@@ -226,3 +226,21 @@ func BFGetCoreMask(socketID, punitID, level uint8) (uint64, error) {
 	}
 	return cpuMask.Mask, nil
 }
+
+// TFSetStatus enables or disables SST-TF for one punit via the TPMI interface,
+// preserving the current BF state.
+func TFSetStatus(socketID, punitID uint8, enable bool) error {
+	perfInfo := isst.PerfLevelInfo{Socket_id: socketID, Power_domain_id: punitID}
+	if err := isst.Ioctl(isst.ISST_IF_PERF_LEVELS, uintptr(unsafe.Pointer(&perfInfo))); err != nil {
+		return fmt.Errorf("ISST_IF_PERF_LEVELS for socket %d punit %d: %w", socketID, punitID, err)
+	}
+	feature := perfInfo.Feature_state & 0x01 // preserve BF bit
+	if enable {
+		feature |= 0x02
+	}
+	ctrl := isst.PerfFeatureControl{Socket_id: socketID, Power_domain_id: punitID, Feature: feature}
+	if err := isst.Ioctl(isst.ISST_IF_PERF_SET_FEATURE, uintptr(unsafe.Pointer(&ctrl))); err != nil {
+		return fmt.Errorf("ISST_IF_PERF_SET_FEATURE (TF=%v) for socket %d punit %d: %w", enable, socketID, punitID, err)
+	}
+	return nil
+}

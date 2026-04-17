@@ -283,6 +283,18 @@ func (h *backend) bfSetStatus(pkg *cpuPackageInfo, pu *punitInfo, enable bool) e
 	return mbox.BFSetStatus(cpu, ppCurrentLevel, enable)
 }
 
+func (h *backend) tfSetStatus(pkg *cpuPackageInfo, pu *punitInfo, enable bool) error {
+	if h.isTPMIPlatform() {
+		return tpmi.TFSetStatus(pkg.id, pu.id, enable)
+	}
+	cpu := uint16(pu.cpus.Members()[0])
+	ppCurrentLevel, err := mbox.PPGetCurrentLevel(cpu)
+	if err != nil {
+		return err
+	}
+	return mbox.TFSetStatus(cpu, ppCurrentLevel, enable)
+}
+
 // tpmiCPUTopo holds the resolved TPMI identifiers for a logical CPU.
 type tpmiCPUTopo struct {
 	socketID    uint8

@@ -143,6 +143,26 @@ func (p *Package) BFDisable() error {
 	return nil
 }
 
+// TFEnable enables SST-TF for this package.
+func (p *Package) TFEnable() error {
+	for _, pu := range p.pkg.punits {
+		if err := p.h.tfSetStatus(p.pkg, pu, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// TFDisable disables SST-TF for this package.
+func (p *Package) TFDisable() error {
+	for _, pu := range p.pkg.punits {
+		if err := p.h.tfSetStatus(p.pkg, pu, false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // CPEnable enables SST-CP for this package.
 func (p *Package) CPEnable() error {
 	for _, pu := range p.pkg.punits {
