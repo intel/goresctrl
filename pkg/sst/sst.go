@@ -77,6 +77,11 @@ type ClosCPUSet map[int]utils.IDSet
 
 var sstlog *slog.Logger = slog.Default()
 
+// SetLogger sets the logger instance used by the package.
+func SetLogger(l *slog.Logger) {
+	sstlog = l
+}
+
 func isstDevPath() string { return goresctrlpath.Path("dev/isst_interface") }
 
 // SstSupported returns true if Intel Speed Select Technologies (SST) is supported
