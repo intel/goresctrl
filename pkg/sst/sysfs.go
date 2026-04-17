@@ -17,6 +17,7 @@ limitations under the License.
 package sst
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -27,12 +28,16 @@ import (
 )
 
 type cpuPackageInfo struct {
-	id   int
-	cpus []int
+	id   uint8
+	cpus []uint16
 }
 
 func (pkg *cpuPackageInfo) hasCpus(cpus utils.IDSet) bool {
-	return utils.NewIDSetFromIntSlice(pkg.cpus...).Has(cpus.Members()...)
+	pkgCPUs := make(utils.IDSet, len(pkg.cpus))
+	for _, c := range pkg.cpus {
+		pkgCPUs.Add(utils.ID(c))
+	}
+	return pkgCPUs.Has(cpus.Members()...)
 }
 
 func getOnlineCpuPackages() (map[int]*cpuPackageInfo, error) {
@@ -55,20 +60,20 @@ func getOnlineCpuPackages() (map[int]*cpuPackageInfo, error) {
 			return nil, err
 		}
 
-		cpuId, err := strconv.Atoi(file.Name()[3:])
+		cpuId, err := strconv.ParseUint(file.Name()[3:], 10, 16)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to parse CPU id from %q: %w", file.Name(), err)
 		}
 
-		pkgId, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+		pkgId, err := strconv.ParseUint(strings.TrimSpace(string(raw)), 10, 8)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to parse package id: %w", err)
 		}
 
-		if _, ok := pkgs[pkgId]; !ok {
-			pkgs[pkgId] = &cpuPackageInfo{id: pkgId}
+		if _, ok := pkgs[int(pkgId)]; !ok {
+			pkgs[int(pkgId)] = &cpuPackageInfo{id: uint8(pkgId)}
 		}
-		pkgs[pkgId].cpus = append(pkgs[pkgId].cpus, cpuId)
+		pkgs[int(pkgId)].cpus = append(pkgs[int(pkgId)].cpus, uint16(cpuId))
 	}
 
 	return pkgs, nil
@@ -81,6 +86,18 @@ func isHWPEnabled() (bool, error) {
 	}
 
 	return (status & 0xff) != 0, nil
+}
+
+func getCPUSocketID(cpu uint16) (uint8, error) {
+	raw, err := os.ReadFile(filepath.Join(goresctrlpath.Path("sys/bus/cpu/devices"), fmt.Sprintf("cpu%d", cpu), "topology/physical_package_id"))
+	if err != nil {
+		return 0, fmt.Errorf("failed to read socket id for cpu %d: %w", cpu, err)
+	}
+	id, err := strconv.ParseUint(strings.TrimSpace(string(raw)), 10, 8)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse socket id for cpu %d: %w", cpu, err)
+	}
+	return uint8(id), nil
 }
 
 func setCPUScalingMin2CPUInfoMinFreq(cpu utils.ID) error {

@@ -19,7 +19,9 @@ package sst
 import (
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
+	"sync"
 
 	goresctrlpath "github.com/intel/goresctrl/pkg/path"
 	"github.com/intel/goresctrl/pkg/utils"
@@ -30,7 +32,8 @@ import (
 type SstPackageInfo struct {
 	// Package related to this SST info
 	pkg *cpuPackageInfo
-
+	// punits for of the package, valid for the TPMI backend only
+	tpmiPunits []uint8
 	// Gereric PP info
 	PPSupported    bool
 	PPLocked       bool
@@ -76,6 +79,15 @@ const (
 type ClosCPUSet map[int]utils.IDSet
 
 var sstlog *slog.Logger = slog.Default()
+
+// sstBackend is a dispatcher to select between Mbox (API v1) and TPMI (API v2+) interfaces
+type sstBackend struct {
+	apiVersion     int
+	apiVersionOnce sync.Once
+}
+
+// backend is the package-level dispatch object.
+var backend = sstBackend{}
 
 // SetLogger sets the logger instance used by the package.
 func SetLogger(l *slog.Logger) {
@@ -138,7 +150,7 @@ func GetPackageInfo(pkgs ...int) (map[int]*SstPackageInfo, error) {
 	infomap := make(map[int]*SstPackageInfo, numPkgs)
 
 	for _, i := range pkglist {
-		info, err := getSinglePackageInfo(packages[i])
+		info, err := backend.getSinglePackageInfo(packages[i])
 		if err != nil {
 			return nil, err
 		}
@@ -149,198 +161,26 @@ func GetPackageInfo(pkgs ...int) (map[int]*SstPackageInfo, error) {
 	return infomap, nil
 }
 
-// getSinglePackageInfo returns information of the SST configuration of one cpu
-// package.
-func getSinglePackageInfo(pkg *cpuPackageInfo) (SstPackageInfo, error) {
-	info := SstPackageInfo{}
-
-	cpu := pkg.cpus[0] // We just need to pass one logical cpu from the pkg as an arg
-
-	var rsp uint32
-	var err error
-
-	// Read perf-profile feature info
-	if rsp, err = sendMboxCmd(cpu, CONFIG_TDP, CONFIG_TDP_GET_LEVELS_INFO, 0, 0); err != nil {
-		return info, fmt.Errorf("failed to read SST PP info: %v", err)
-	}
-	info.PPSupported = getBits(rsp, 31, 31) != 0
-	info.PPLocked = getBits(rsp, 24, 24) != 0
-	info.PPCurrentLevel = int(getBits(rsp, 16, 23))
-	info.PPMaxLevel = int(getBits(rsp, 8, 15))
-	info.PPVersion = int(getBits(rsp, 0, 7))
-	info.pkg = pkg
-
-	// Forget about older hw with partial/convoluted support
-	if info.PPVersion < 3 {
-		sstlog.Info("SST PP version less than 3, giving up...", "version", info.PPVersion)
-		return info, nil
-	}
-
-	// Read the status of currently active perf-profile
-	if !info.PPSupported {
-		sstlog.Debug("SST PP feature not supported, only current profile level is valid", "profileLevel", info.PPCurrentLevel)
-	}
-
-	if rsp, err = sendMboxCmd(cpu, CONFIG_TDP, CONFIG_TDP_GET_TDP_CONTROL, 0, uint32(info.PPCurrentLevel)); err != nil {
-		return info, fmt.Errorf("failed to read SST BF/TF status: %v", err)
-	}
-
-	info.BFSupported = isBitSet(rsp, 1)
-	info.BFEnabled = isBitSet(rsp, 17)
-
-	info.TFSupported = isBitSet(rsp, 0)
-	info.TFEnabled = isBitSet(rsp, 16)
-
-	// Read base-frequency info
-	if info.BFSupported {
-		info.BFCores = utils.IDSet{}
-
-		punitCoreIDs := make(map[utils.ID]utils.IDSet, len(pkg.cpus))
-		var maxPunitCore utils.ID
-		for _, id := range pkg.cpus {
-			pc, err := punitCPU(id)
-			if err != nil {
-				return info, err
-			}
-			punitCore := pc >> 1
-			if _, ok := punitCoreIDs[punitCore]; !ok {
-				punitCoreIDs[punitCore] = utils.IDSet{}
-			}
-			punitCoreIDs[punitCore].Add(id)
-			if punitCore > maxPunitCore {
-				maxPunitCore = punitCore
-			}
-		}
-
-		// Read out core masks in batches of 32 (32 bits per response)
-		for i := 0; i <= int(maxPunitCore)/32; i++ {
-			if rsp, err = sendMboxCmd(cpu, CONFIG_TDP, CONFIG_TDP_PBF_GET_CORE_MASK_INFO, 0, uint32(info.PPCurrentLevel+(i<<8))); err != nil {
-				return info, fmt.Errorf("failed to read SST BF core mask (#%d): %v", i, err)
-			}
-			for bit := 0; bit < 32; bit++ {
-				if isBitSet(rsp, uint32(bit)) {
-					info.BFCores.Add(punitCoreIDs[utils.ID(i*32+bit)].Members()...)
-				}
-			}
-		}
-	}
-
-	// Read core-power feature info
-	if rsp, err = sendMboxCmd(cpu, READ_PM_CONFIG, PM_FEATURE, 0, 0); err != nil {
-		return info, fmt.Errorf("failed to read SST CP info: %v", err)
-	}
-
-	info.CPSupported = isBitSet(rsp, 0)
-	info.CPEnabled = isBitSet(rsp, 16)
-
-	if info.CPSupported {
-		if rsp, err = sendMboxCmd(cpu, CONFIG_CLOS, CLOS_PM_QOS_CONFIG, 0, 0); err != nil {
-			return info, fmt.Errorf("failed to read SST CP status: %v", err)
-		}
-
-		info.CPPriority = CPPriorityType(getBits(rsp, 2, 2))
-		info.ClosCPUInfo = make(map[int]utils.IDSet, NumClos)
-
-		for i := 0; i < NumClos; i++ {
-			if rsp, err = sendClosCmd(cpu, CLOS_PM_CLOS, uint32(i), 0); err != nil {
-				return info, fmt.Errorf("failed to read SST CLOS #%d info: %v", i, err)
-			}
-
-			info.ClosInfo[i] = SstClosInfo{
-				EPP:                  int(getBits(rsp, 0, 3)),
-				ProportionalPriority: int(getBits(rsp, 4, 7)),
-				MinFreq:              int(getBits(rsp, 8, 15)),
-				MaxFreq:              int(getBits(rsp, 16, 23)),
-				DesiredFreq:          int(getBits(rsp, 24, 31)),
-			}
-		}
-
-		for _, id := range pkg.cpus {
-			closId, err := GetCPUClosID(id)
-			if err != nil {
-				continue
-			}
-
-			if info.ClosCPUInfo[closId] == nil {
-				info.ClosCPUInfo[closId] = utils.NewIDSet(id)
-			} else {
-				info.ClosCPUInfo[closId].Add(id)
-			}
-		}
-	}
-
-	return info, nil
-}
-
-func getPunitCoreId(cpu utils.ID) (uint32, error) {
-	p, err := punitCPU(cpu)
-	if err != nil {
-		return 0, err
-	}
-	punitCore := uint32(p) >> 1
-
-	return punitCore, nil
-}
-
 // GetCPUClosID returns the SST-CP CLOS id that a cpu is associated with.
 func GetCPUClosID(cpu utils.ID) (int, error) {
-	punitCore, err := getPunitCoreId(cpu)
-	if err != nil {
-		return -1, fmt.Errorf("invalid core id %d for cpu %d: %v", punitCore, cpu, err)
-	}
-
-	rsp, err := sendClosCmd(cpu, CLOS_PQR_ASSOC, punitCore, 0)
-	if err != nil {
-		return -1, fmt.Errorf("failed to read CLOS number of cpu %d: %v", cpu, err)
-	}
-	return int(getBits(rsp, 16, 17)), nil
+	return backend.getCPUClosID(cpu)
 }
 
-func getBits(val, i, j uint32) uint32 {
-	lsb := i
-	msb := j
-	if i > j {
-		lsb = j
-		msb = i
+func assignCPU2Clos(info *SstPackageInfo, clos int) error {
+	sstlog.Debug("assigning CPUs to SST CLOS", "closID", clos, "cpuset", info.ClosCPUInfo[clos].Members())
+
+	for _, cpu := range info.ClosCPUInfo[clos].Members() {
+		if err := backend.associate2Clos(info, utils.ID(cpu), clos); err != nil {
+			return fmt.Errorf("failed to associate cpu %d to clos %d: %v", cpu, clos, err)
+		}
 	}
-	return (val >> lsb) & ((1 << (msb - lsb + 1)) - 1)
-}
-
-func isBitSet(val, n uint32) bool {
-	return val&(1<<n) != 0
-}
-
-func setBit(val, n uint32) uint32 {
-	return val | (1 << n)
-}
-
-func clearBit(val, n uint32) uint32 {
-	return val &^ (1 << n)
-}
-
-func setBFStatus(info *SstPackageInfo, status bool) error {
-	rsp, err := sendMboxCmd(info.pkg.cpus[0], CONFIG_TDP, CONFIG_TDP_GET_TDP_CONTROL, 0, uint32(info.PPCurrentLevel))
-	if err != nil {
-		return fmt.Errorf("failed to read SST status: %w", err)
-	}
-
-	req := clearBit(rsp, 17)
-	if status {
-		req = setBit(rsp, 17)
-	}
-
-	if _, err = sendMboxCmd(info.pkg.cpus[0], CONFIG_TDP, CONFIG_TDP_SET_TDP_CONTROL, 0, req); err != nil {
-		return fmt.Errorf("failed to enable SST %s: %w", "BF", err)
-	}
-
-	info.BFEnabled = status
 
 	return nil
 }
 
 func setScalingMin2CPUInfoMax(info *SstPackageInfo) error {
 	for _, cpu := range info.pkg.cpus {
-		err := setCPUScalingMin2CPUInfoMaxFreq(cpu)
+		err := setCPUScalingMin2CPUInfoMaxFreq(utils.ID(cpu))
 		if err != nil {
 			return err
 		}
@@ -354,7 +194,7 @@ func enableBF(info *SstPackageInfo) error {
 		return fmt.Errorf("SST BF not supported")
 	}
 
-	if err := setBFStatus(info, true); err != nil {
+	if err := backend.setBFStatus(info, true); err != nil {
 		return err
 	}
 
@@ -389,7 +229,7 @@ func EnableBF(pkgs ...int) error {
 
 func setScalingMin2CPUInfoMin(info *SstPackageInfo) error {
 	for _, cpu := range info.pkg.cpus {
-		err := setCPUScalingMin2CPUInfoMinFreq(cpu)
+		err := setCPUScalingMin2CPUInfoMinFreq(utils.ID(cpu))
 		if err != nil {
 			return err
 		}
@@ -403,7 +243,7 @@ func disableBF(info *SstPackageInfo) error {
 		return fmt.Errorf("SST BF not supported")
 	}
 
-	if err := setBFStatus(info, false); err != nil {
+	if err := backend.setBFStatus(info, false); err != nil {
 		return err
 	}
 
@@ -424,136 +264,6 @@ func DisableBF(pkgs ...int) error {
 	for _, i := range info {
 		if err := disableBF(i); err != nil {
 			return err
-		}
-	}
-
-	return nil
-}
-
-func sendClosCmd(cpu utils.ID, subCmd uint16, parameter uint32, reqData uint32) (uint32, error) {
-	var id, offset uint32
-
-	switch subCmd {
-	case CLOS_PQR_ASSOC:
-		id = parameter & 0xff // core id
-		offset = PQR_ASSOC_OFFSET
-	case CLOS_PM_CLOS:
-		id = parameter & 0x03 // clos id
-		offset = PM_CLOS_OFFSET
-	case CLOS_STATUS:
-		fallthrough
-	default:
-		return 0, nil
-	}
-
-	return sendMMIOCmd(cpu, (id<<2)+offset, reqData, isBitSet(parameter, MBOX_CMD_WRITE_BIT))
-}
-
-func saveClos(closInfo *SstClosInfo, cpu utils.ID, clos int) error {
-	req := closInfo.EPP & 0x0f
-	req |= (closInfo.ProportionalPriority & 0x0f) << 4
-	req |= (closInfo.MinFreq & 0xff) << 8
-	req |= (closInfo.MaxFreq & 0xff) << 16
-	req |= (closInfo.DesiredFreq & 0xff) << 24
-
-	param := setBit(uint32(clos), MBOX_CMD_WRITE_BIT)
-
-	if _, err := sendClosCmd(cpu, CLOS_PM_CLOS, param, uint32(req)); err != nil {
-		return fmt.Errorf("failed to save Clos: %v", err)
-	}
-
-	return nil
-}
-
-func associate2Clos(cpu utils.ID, clos int) error {
-	coreId, err := getPunitCoreId(cpu)
-	if err != nil {
-		return fmt.Errorf("invalid core id %d for cpu %d: %v", coreId, cpu, err)
-	}
-
-	req := (clos & 0x03) << 16
-	param := setBit(coreId, MBOX_CMD_WRITE_BIT)
-
-	if _, err := sendClosCmd(cpu, CLOS_PQR_ASSOC, param, uint32(req)); err != nil {
-		return fmt.Errorf("failed to associate cpu %d to clos %d: %v", cpu, clos, err)
-	}
-
-	return nil
-}
-
-func writePMConfig(info *SstPackageInfo, cpu utils.ID, enable bool) (uint32, error) {
-	var req uint32
-
-	if enable {
-		req = setBit(0, 16)
-	}
-
-	if _, err := sendMboxCmd(cpu, WRITE_PM_CONFIG, PM_FEATURE, 0, req); err != nil {
-		return 0, fmt.Errorf("failed to set SST-CP status: %v", err)
-	}
-
-	rsp, err := sendMboxCmd(cpu, READ_PM_CONFIG, PM_FEATURE, 0, 0)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get SST-CP status: %v", err)
-	}
-
-	return rsp, nil
-}
-
-func writeClosPmQosConfig(info *SstPackageInfo, cpu utils.ID, enable bool) error {
-	var req uint32
-
-	param := setBit(0, MBOX_CMD_WRITE_BIT)
-
-	if enable {
-		req = setBit(0, 1)
-
-		if info.CPPriority > 0 {
-			req = setBit(req, 2)
-		}
-	}
-
-	if _, err := sendMboxCmd(cpu, CONFIG_CLOS, CLOS_PM_QOS_CONFIG, param, req); err != nil {
-		return fmt.Errorf("failed to set SST-CP status: %v", err)
-	}
-
-	return nil
-}
-
-func enableCP(info *SstPackageInfo, cpu utils.ID) (uint32, error) {
-	if err := writeClosPmQosConfig(info, cpu, true); err != nil {
-		return 0, fmt.Errorf("cannot set Clos status: %v", err)
-	}
-
-	return writePMConfig(info, cpu, true)
-}
-
-func disableCP(info *SstPackageInfo, cpu utils.ID) (uint32, error) {
-	if err := writeClosPmQosConfig(info, cpu, false); err != nil {
-		return 0, fmt.Errorf("cannot set Clos status: %v", err)
-	}
-
-	return writePMConfig(info, cpu, false)
-}
-
-func setDefaultClosParam(info *SstPackageInfo, cpu utils.ID) error {
-	defaultConfig := &SstClosInfo{MaxFreq: 255}
-
-	for clos := 0; clos < 4; clos++ {
-		if err := saveClos(defaultConfig, cpu, clos); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func assignCPU2Clos(info *SstPackageInfo, clos int) error {
-	sstlog.Debug("assigning CPUs to SST CLOS", "closID", clos, "cpuset", info.ClosCPUInfo[clos].Members())
-
-	for _, cpu := range info.ClosCPUInfo[clos].Members() {
-		if err := associate2Clos(cpu, clos); err != nil {
-			return fmt.Errorf("failed to associate cpu %d to clos %d: %v", cpu, clos, err)
 		}
 	}
 
@@ -634,7 +344,7 @@ func ClosSetup(info *SstPackageInfo, clos int, closInfo *SstClosInfo) error {
 
 	info.ClosInfo[clos] = *closInfo
 
-	return saveClos(&info.ClosInfo[clos], info.pkg.cpus[0], clos)
+	return backend.saveClos(info, clos, &info.ClosInfo[clos])
 }
 
 // ResetCPConfig will bring the system to a known state. This means that all
@@ -647,14 +357,12 @@ func ResetCPConfig() error {
 	}
 
 	for _, info := range infomap {
-		for _, cpu := range info.pkg.cpus {
-			if info.pkg.cpus[0] == cpu {
-				if err := setDefaultClosParam(info, cpu); err != nil {
-					return err
-				}
-			}
+		if err := backend.setDefaultClosParam(info); err != nil {
+			return err
+		}
 
-			if err := associate2Clos(cpu, 0); err != nil {
+		for _, cpu := range info.pkg.cpus {
+			if err := backend.associate2Clos(info, utils.ID(cpu), 0); err != nil {
 				return fmt.Errorf("failed to associate cpu %d to clos %d: %w", cpu, 0, err)
 			}
 		}
@@ -676,13 +384,9 @@ func EnableCP(info *SstPackageInfo) error {
 		return fmt.Errorf("failed to enable CP: Clos to CPU mapping missing")
 	}
 
-	rsp, err := enableCP(info, info.pkg.cpus[0])
-	if err != nil {
+	if err := backend.enableCP(info); err != nil {
 		return fmt.Errorf("failed to enable SST-CP: %v", err)
 	}
-
-	info.CPSupported = isBitSet(rsp, 0)
-	info.CPEnabled = isBitSet(rsp, 16)
 
 	return nil
 }
@@ -697,13 +401,122 @@ func DisableCP(info *SstPackageInfo) error {
 		return fmt.Errorf("SST TF still enabled, disable it first")
 	}
 
-	rsp, err := disableCP(info, info.pkg.cpus[0])
-	if err != nil {
+	if err := backend.disableCP(info); err != nil {
 		return fmt.Errorf("failed to disable SST-CP: %v", err)
 	}
 
+	return nil
+}
+
+// pkgCPU returns the first CPU of the package.
+// SstPackageInfo is always created with at least one CPU, so no bounds check is in place.
+func (info *SstPackageInfo) pkgCPU() uint16 { return info.pkg.cpus[0] }
+
+func (b *sstBackend) platformAPIVersion() int {
+	b.apiVersionOnce.Do(func() {
+		v, err := getPlatformAPIVersion()
+		if err != nil {
+			sstlog.Debug("failed to get ISST platform API version, assuming 1 (mbox)", "error", err)
+			v = 1
+		}
+		b.apiVersion = v
+	})
+	return b.apiVersion
+}
+
+func (b *sstBackend) isTPMIPlatform() bool {
+	return b.platformAPIVersion() >= 2
+}
+
+func (b *sstBackend) getSinglePackageInfo(pkg *cpuPackageInfo) (SstPackageInfo, error) {
+	if b.isTPMIPlatform() {
+		return getSinglePackageInfoTPMI(pkg)
+	}
+	return getSinglePackageInfoMbox(pkg)
+}
+
+func (b *sstBackend) getCPUClosID(cpu utils.ID) (int, error) {
+	if cpu < 0 || cpu > math.MaxUint16 {
+		return -1, fmt.Errorf("CPU id %d out of range", cpu)
+	}
+	cpuID := uint16(cpu)
+	if b.isTPMIPlatform() {
+		socketID, err := getCPUSocketID(cpuID)
+		if err != nil {
+			return -1, err
+		}
+		punitID, err := getCPUPunitID(cpuID)
+		if err != nil {
+			return -1, err
+		}
+		closID, err := getCPUClosIDTPMI(cpuID, socketID, punitID)
+		return int(closID), err
+	}
+	closID, err := getCPUClosIDMbox(cpuID)
+	return int(closID), err
+}
+
+func (b *sstBackend) setBFStatus(info *SstPackageInfo, enable bool) error {
+	if b.isTPMIPlatform() {
+		return setBFStatusTPMI(info, enable)
+	}
+	return setBFStatusMbox(info, enable)
+}
+
+func (b *sstBackend) associate2Clos(info *SstPackageInfo, cpu utils.ID, clos int) error {
+	if cpu < 0 || cpu > math.MaxUint16 {
+		return fmt.Errorf("CPU id %d out of range", cpu)
+	}
+	if clos < 0 || clos >= NumClos {
+		return fmt.Errorf("CLOS id %d out of range (valid: 0-%d)", clos, NumClos-1)
+	}
+	cpuID, closID := uint16(cpu), uint8(clos)
+	if b.isTPMIPlatform() {
+		return associate2ClosTPMI(cpuID, info.pkg.id, closID)
+	}
+	return associate2ClosMbox(cpuID, closID)
+}
+
+func (b *sstBackend) saveClos(info *SstPackageInfo, clos int, closInfo *SstClosInfo) error {
+	if clos < 0 || clos >= NumClos {
+		return fmt.Errorf("CLOS id %d out of range (valid: 0-%d)", clos, NumClos-1)
+	}
+	closID := uint8(clos)
+	if b.isTPMIPlatform() {
+		return saveClosTPMI(info, closID, closInfo)
+	}
+	return saveClosMbox(closInfo, info.pkgCPU(), closID)
+}
+
+func (b *sstBackend) setDefaultClosParam(info *SstPackageInfo) error {
+	if b.isTPMIPlatform() {
+		return setDefaultClosParamTPMI(info)
+	}
+	return setDefaultClosParamMbox(info.pkgCPU())
+}
+
+func (b *sstBackend) enableCP(info *SstPackageInfo) error {
+	if b.isTPMIPlatform() {
+		return enableCPTPMI(info)
+	}
+	rsp, err := enableCPMbox(info, info.pkgCPU())
+	if err != nil {
+		return err
+	}
 	info.CPSupported = isBitSet(rsp, 0)
 	info.CPEnabled = isBitSet(rsp, 16)
+	return nil
+}
 
+func (b *sstBackend) disableCP(info *SstPackageInfo) error {
+	if b.isTPMIPlatform() {
+		return disableCPTPMI(info)
+	}
+	rsp, err := disableCPMbox(info, info.pkgCPU())
+	if err != nil {
+		return err
+	}
+	info.CPSupported = isBitSet(rsp, 0)
+	info.CPEnabled = isBitSet(rsp, 16)
 	return nil
 }
