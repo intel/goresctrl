@@ -14,11 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// This file is used for auto-generation of sst_types_priv.go
-package sst
+// This file is used for auto-generation of types_priv.go.
+// Regenerate with: go generate ./pkg/sst/mbox/...
+// Requires kernel source tree at $KERNEL_SRC_DIR (default: /usr/src/linux).
+package isst
 
 // #include "tools/power/x86/intel-speed-select/isst.h"
-// #include "tools/arch/x86/include/asm/msr-index.h"
 //
 import "C"
 
@@ -65,7 +66,4 @@ const (
 	PM_QOS_CONFIG_OFFSET = C.PM_QOS_CONFIG_OFFSET
 	PM_CLOS_OFFSET       = C.PM_CLOS_OFFSET
 	PQR_ASSOC_OFFSET     = C.PQR_ASSOC_OFFSET
-
-	// Hardware P state interface
-	MSR_PM_ENABLE = C.MSR_PM_ENABLE
 )

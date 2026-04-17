@@ -2,7 +2,7 @@
 
 set -o pipefail
 
-tmpfile="_sst_types_out.go"
+tmpfile="_types_out.go"
 trap "rm -f $tmpfile" EXIT
 
 generate() {
@@ -21,7 +21,7 @@ KERNEL_SRC_DIR="${KERNEL_SRC_DIR:-/usr/src/linux}"
 echo "INFO: using kernel sources at $KERNEL_SRC_DIR"
 
 # Generate types from Linux kernel (public) headers
-generate sst_types_amd64.go -I"$KERNEL_SRC_DIR/include/uapi" "-I$KERNEL_SRC_DIR/include"
+generate types_amd64.go -I"$KERNEL_SRC_DIR/include/uapi" "-I$KERNEL_SRC_DIR/include"
 
-# Generate types from Linux kernel private headers
-generate sst_types_priv.go -I"$KERNEL_SRC_DIR" "-I$KERNEL_SRC_DIR/include -I$KERNEL_SRC_DIR/arch/x86/include/generated/"
+# Generate constants from Linux kernel private headers (isst tool sources)
+generate types_priv.go "-I$KERNEL_SRC_DIR" "-I$KERNEL_SRC_DIR/include" "-I$KERNEL_SRC_DIR/arch/x86/include/generated/"

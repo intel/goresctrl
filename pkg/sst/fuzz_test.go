@@ -83,12 +83,12 @@ func FuzzClosSetup(f *testing.F) {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
-		info, err := getSinglePackageInfo(pkgs[pkg].pkg)
+		updated, err := GetPackageInfo(pkg)
 		if err != nil {
-			t.Errorf("failed to get package info: %v", err)
+			t.Fatalf("failed to get package info: %v", err)
 		}
-		if !cmp.Equal(info.ClosInfo[clos], *expectedInfo) {
-			t.Errorf("CLOS not configured correctly, expected %v, got %v", expectedInfo, info.ClosInfo[clos])
+		if !cmp.Equal(updated[pkg].ClosStatus[clos], *expectedInfo) {
+			t.Errorf("CLOS not configured correctly, expected %v, got %v", expectedInfo, updated[pkg].ClosStatus[clos])
 		}
 	})
 }

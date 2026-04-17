@@ -26,7 +26,7 @@ import (
 )
 
 func printPackageInfo(pkgId ...int) error {
-	info, err := sst.GetPackageInfo(pkgId...)
+	info, err := sst.GetPackageInfo(pkgId...) //nolint:staticcheck // deprecated
 	if err != nil {
 		return err
 	}
