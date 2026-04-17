@@ -36,8 +36,8 @@ func printPackageInfo(pkgId ...int) error {
 	return nil
 }
 
-// TODO: Move this functionality into utils.NewIdSetFromString()
-func str2slice(str string) []int {
+// TODO: Move this functionality into utils.NewIDSetFromString()
+func str2slice(str string) ([]int, error) {
 	var s []int
 
 	for _, str := range strings.Split(str, ",") {
@@ -47,12 +47,11 @@ func str2slice(str string) []int {
 
 		id, err := strconv.ParseInt(str, 10, 0)
 		if err != nil {
-			fmt.Printf("invalid value '%s': %v", str, err)
-			continue
+			return nil, fmt.Errorf("invalid value %q: %w", str, err)
 		}
 
 		s = append(s, int(id))
 	}
 
-	return s
+	return s, nil
 }

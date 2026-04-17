@@ -25,7 +25,7 @@ import (
 	"github.com/intel/goresctrl/pkg/utils"
 )
 
-// TODO: Instead of all CP parameters groupped together, separate them like this.
+// TODO: Instead of all CP parameters grouped together, separate them like this.
 //    sst-ctl cp enable
 //    sst-ctl cp disable
 //    sst-ctl cp configure -clos=CLOS...
@@ -97,7 +97,11 @@ func subCmdCP(args []string) error {
 	// If user specifies a list of CPUs, then the package option is ignored.
 	// Verify that all the CPUs belong to one specific package.
 	if cpuStr != "" {
-		cpus = utils.NewIDSet(str2slice(cpuStr)...)
+		cpuSlice, err := str2slice(cpuStr)
+		if err != nil {
+			return err
+		}
+		cpus = utils.NewIDSet(cpuSlice...)
 
 		infomap, info, pkgs, err = getPackage(packageIds, cpus)
 		if err != nil {
@@ -120,7 +124,10 @@ func subCmdCP(args []string) error {
 		}
 
 	} else if clos >= 0 {
-		pkgs = str2slice(packageIds)
+		pkgs, err = str2slice(packageIds)
+		if err != nil {
+			return err
+		}
 		if len(pkgs) == 0 {
 			return fmt.Errorf("no packages set, invalid value %q", packageIds)
 		}
@@ -149,7 +156,14 @@ func subCmdCP(args []string) error {
 		}
 
 		// Print information if user just wants to enable / disable CP
-		infomap, _ = sst.GetPackageInfo(pkgs...)
+		pkgs, err = str2slice(packageIds)
+		if err != nil {
+			return err
+		}
+		infomap, err = sst.GetPackageInfo(pkgs...)
+		if err != nil {
+			return fmt.Errorf("cannot get package info: %w", err)
+		}
 	}
 
 	if enable || disable {
@@ -188,7 +202,10 @@ func getPackage(packageStr string, cpus utils.IDSet) (map[int]*sst.SstPackageInf
 	var err error
 
 	// If user has specified a package, then all the CPUs must belong to it.
-	pkgs := str2slice(packageStr)
+	pkgs, err := str2slice(packageStr)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	if len(pkgs) > 1 {
 		fmt.Printf("Only one package can be configured at a time (you have %d)\n", len(pkgs))
 		return nil, nil, nil, fmt.Errorf("provide one package value only")
@@ -220,9 +237,6 @@ func getPackage(packageStr string, cpus utils.IDSet) (map[int]*sst.SstPackageInf
 				fmt.Printf("All the CPUs %v must belong to one specific package\n", cpus)
 				return nil, nil, nil, fmt.Errorf("not all CPUs belong to package %d", packageId)
 			}
-
-			pkgs = append(pkgs, packageId)
-			break
 		}
 	}
 

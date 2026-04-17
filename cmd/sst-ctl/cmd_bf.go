@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 
@@ -64,11 +65,13 @@ func subCmdBF(args []string) error {
 	}
 
 	if (!enable && !disable) || (enable && disable) {
-		fmt.Printf("Please provide either -enable or -disable flag\n")
-		return nil
+		return errors.New("please provide either -enable or -disable flag")
 	}
 
-	pkgs := str2slice(packageIds)
+	pkgs, err := str2slice(packageIds)
+	if err != nil {
+		return err
+	}
 
 	if enable {
 		return enableBF(pkgs...)
