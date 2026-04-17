@@ -47,6 +47,7 @@ var subCmds = map[string]subCmd{
 	"status": {description: "Print current status of SST features", f: subCmdStatus},
 	"bf":     {description: "Configure SST-BF feature", f: subCmdBF},
 	"cp":     {description: "Configure SST-CP feature", f: subCmdCP},
+	"tf":     {description: "Configure SST-TF feature", f: subCmdTF},
 }
 
 func main() {
@@ -328,6 +329,46 @@ func subCmdBF(args []string) error {
 		}
 	default:
 		return fmt.Errorf("unknown bf sub-command %q (valid: enable, disable)", sub)
+	}
+	return nil
+}
+
+func subCmdTF(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: tf <enable|disable> [options]")
+	}
+	sub := args[0]
+	flags := flag.NewFlagSet("tf "+sub, flag.ExitOnError)
+	addCommonFlags(flags)
+	addCommonPackageFlags(flags)
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	h, err := initHandle()
+	if err != nil {
+		return err
+	}
+	pkgs, err := getPackageHandles(h)
+	if err != nil {
+		return err
+	}
+	switch sub {
+	case "enable":
+		for _, pkg := range pkgs {
+			fmt.Printf("Enabling TF for package %d\n", pkg.ID())
+			if err := pkg.TFEnable(); err != nil {
+				return fmt.Errorf("failed to enable TF for package %d: %w", pkg.ID(), err)
+			}
+		}
+	case "disable":
+		for _, pkg := range pkgs {
+			fmt.Printf("Disabling TF for package %d\n", pkg.ID())
+			if err := pkg.TFDisable(); err != nil {
+				return fmt.Errorf("failed to disable TF for package %d: %w", pkg.ID(), err)
+			}
+		}
+	default:
+		return fmt.Errorf("unknown tf sub-command %q (valid: enable, disable)", sub)
 	}
 	return nil
 }
