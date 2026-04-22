@@ -89,6 +89,22 @@ func getSinglePackageInfoTPMI(pkg *cpuPackageInfo) (SstPackageInfo, error) {
 	if err := isstIoctl(ISST_IF_PERF_LEVELS, uintptr(unsafe.Pointer(&perfInfo))); err != nil {
 		return info, fmt.Errorf("ISST_IF_PERF_LEVELS for socket %d punit %d: %w", socketID, pkgPunit, err)
 	}
+	// Check all punits for consistency, expected to be configured per-package
+	for _, punit := range punits[1:] {
+		pi := isstPerfLevelInfo{Socket_id: socketID, Power_domain_id: punit}
+		if err := isstIoctl(ISST_IF_PERF_LEVELS, uintptr(unsafe.Pointer(&pi))); err != nil {
+			return info, fmt.Errorf("ISST_IF_PERF_LEVELS for socket %d punit %d: %w", socketID, punit, err)
+		}
+		pi.Socket_id = 0
+		pi.Power_domain_id = 0
+
+		ref := perfInfo
+		ref.Socket_id = 0
+		ref.Power_domain_id = 0
+		if ref != pi {
+			sstlog.Debug("ISST_IF_PERF_LEVELS inconsistency detected", "socket", socketID, "punitRef", pkgPunit, "punit", punit, "punitRefData", ref, "punitData", pi)
+		}
+	}
 
 	info.PPSupported = perfInfo.Enabled != 0
 	info.PPLocked = perfInfo.Locked != 0
@@ -151,6 +167,16 @@ func getSinglePackageInfoTPMI(pkg *cpuPackageInfo) (SstPackageInfo, error) {
 	if err := isstIoctl(ISST_IF_CORE_POWER_STATE, uintptr(unsafe.Pointer(&cpState))); err != nil {
 		return info, fmt.Errorf("ISST_IF_CORE_POWER_STATE for socket %d punit %d: %w", socketID, pkgPunit, err)
 	}
+	// Check all punits for consistency, expected to be configured per-package
+	for _, punit := range punits[1:] {
+		cs := isstCorePower{Socket_id: socketID, Power_domain_id: punit}
+		if err := isstIoctl(ISST_IF_CORE_POWER_STATE, uintptr(unsafe.Pointer(&cs))); err != nil {
+			return info, fmt.Errorf("ISST_IF_CORE_POWER_STATE for socket %d punit %d: %w", socketID, punit, err)
+		}
+		if cs.Supported != cpState.Supported || cs.Enable != cpState.Enable || cs.Priority_type != cpState.Priority_type {
+			sstlog.Debug("ISST_IF_CORE_POWER_STATE inconsistency detected", "socket", socketID, "punitRef", pkgPunit, "punit", punit, "punitRefData", cpState, "punitData", cs)
+		}
+	}
 
 	info.CPSupported = cpState.Supported != 0
 	info.CPEnabled = cpState.Enable != 0
@@ -167,6 +193,16 @@ func getSinglePackageInfoTPMI(pkg *cpuPackageInfo) (SstPackageInfo, error) {
 			}
 			if err := isstIoctl(ISST_IF_CLOS_PARAM, uintptr(unsafe.Pointer(&closParam))); err != nil {
 				return info, fmt.Errorf("ISST_IF_CLOS_PARAM for clos %d: %w", i, err)
+			}
+			// Check all punits for consistency, expected to be configured per-package
+			for _, punit := range punits[1:] {
+				cp := isstClosParam{Socket_id: socketID, Power_domain_id: punit, Clos: uint8(i)}
+				if err := isstIoctl(ISST_IF_CLOS_PARAM, uintptr(unsafe.Pointer(&cp))); err != nil {
+					return info, fmt.Errorf("ISST_IF_CLOS_PARAM for socket %d punit %d clos %d: %w", socketID, punit, i, err)
+				}
+				if cp.Prop_prio != closParam.Prop_prio || cp.Min_freq_mhz != closParam.Min_freq_mhz || cp.Max_freq_mhz != closParam.Max_freq_mhz {
+					sstlog.Debug("ISST_IF_CLOS_PARAM inconsistency detected", "socket", socketID, "clos", i, "punitRef", pkgPunit, "punit", punit, "punitRefData", closParam, "punitData", cp)
+				}
 			}
 
 			// TPMI reports frequencies in MHz; divide by 100 to match the
