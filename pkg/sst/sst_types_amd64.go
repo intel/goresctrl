@@ -4,10 +4,32 @@
 package sst
 
 const (
-	ISST_IF_GET_PHY_ID   = 0xc008fe01
-	ISST_IF_IO_CMD       = 0x4008fe02
-	ISST_IF_MBOX_COMMAND = 0xc008fe03
+	ISST_IF_GET_PLATFORM_INFO = 0x8008fe00
+	ISST_IF_GET_PHY_ID        = 0xc008fe01
+	ISST_IF_IO_CMD            = 0x4008fe02
+	ISST_IF_MBOX_COMMAND      = 0xc008fe03
+
+	ISST_IF_COUNT_TPMI_INSTANCES    = 0x8008fe05
+	ISST_IF_CORE_POWER_STATE        = 0xc008fe06
+	ISST_IF_CLOS_PARAM              = 0xc008fe07
+	ISST_IF_CLOS_ASSOC              = 0xc008fe08
+	ISST_IF_PERF_LEVELS             = 0xc008fe09
+	ISST_IF_PERF_SET_LEVEL          = 0x4008fe0a
+	ISST_IF_PERF_SET_FEATURE        = 0x4008fe0b
+	ISST_IF_GET_PERF_LEVEL_INFO     = 0x8008fe0c
+	ISST_IF_GET_PERF_LEVEL_CPU_MASK = 0x8008fe0d
+	ISST_IF_GET_BASE_FREQ_INFO      = 0x8008fe0e
+	ISST_IF_GET_BASE_FREQ_CPU_MASK  = 0x8008fe0f
+	ISST_IF_GET_TURBO_FREQ_INFO     = 0x8008fe10
 )
+
+type isstIfPlatformInfo struct {
+	Api_version        uint16
+	Driver_version     uint16
+	Max_cmds_per_ioctl uint16
+	Mbox_supported     uint8
+	Mmio_supported     uint8
+}
 
 type isstIfCPUMaps struct {
 	Cmd_count uint32
@@ -41,4 +63,119 @@ type isstIfMboxCmd struct {
 type isstIfMboxCmds struct {
 	Cmd_count uint32
 	Mbox_cmd  [1]isstIfMboxCmd
+}
+
+type isstTpmiInstanceCount struct {
+	Socket_id  uint8
+	Count      uint8
+	Valid_mask uint16
+}
+type isstCorePower struct {
+	Get_set         uint8
+	Socket_id       uint8
+	Power_domain_id uint8
+	Enable          uint8
+	Supported       uint8
+	Priority_type   uint8
+}
+type isstClosParam struct {
+	Get_set         uint8
+	Socket_id       uint8
+	Power_domain_id uint8
+	Clos            uint8
+	Min_freq_mhz    uint16
+	Max_freq_mhz    uint16
+	Prop_prio       uint8
+	Pad_cgo_0       [1]byte
+}
+type isstIfClosAssoc struct {
+	Socket_id       uint8
+	Power_domain_id uint8
+	Logical_cpu     uint16
+	Clos            uint16
+}
+type isstIfClosAssocCmds struct {
+	Cmd_count     uint16
+	Get_set       uint16
+	Punit_cpu_map uint16
+	Assoc_info    [1]isstIfClosAssoc
+}
+type isstPerfLevelInfo struct {
+	Socket_id       uint8
+	Power_domain_id uint8
+	Max_level       uint8
+	Feature_rev     uint8
+	Level_mask      uint8
+	Current_level   uint8
+	Feature_state   uint8
+	Locked          uint8
+	Enabled         uint8
+	Sst_tf_support  uint8
+	Sst_bf_support  uint8
+}
+type isstPerfLevelControl struct {
+	Socket_id       uint8
+	Power_domain_id uint8
+	Level           uint8
+}
+type isstPerfFeatureControl struct {
+	Socket_id       uint8
+	Power_domain_id uint8
+	Feature         uint8
+}
+type isstPerfLevelDataInfo struct {
+	Socket_id              uint8
+	Power_domain_id        uint8
+	Level                  uint16
+	Tdp_ratio              uint16
+	Base_freq_mhz          uint16
+	Base_freq_avx2_mhz     uint16
+	Base_freq_avx512_mhz   uint16
+	Base_freq_amx_mhz      uint16
+	Thermal_design_power_w uint16
+	Tjunction_max_c        uint16
+	Max_memory_freq_mhz    uint16
+	Cooling_type           uint16
+	P0_freq_mhz            uint16
+	P1_freq_mhz            uint16
+	Pn_freq_mhz            uint16
+	Pm_freq_mhz            uint16
+	P0_fabric_freq_mhz     uint16
+	P1_fabric_freq_mhz     uint16
+	Pn_fabric_freq_mhz     uint16
+	Pm_fabric_freq_mhz     uint16
+	Max_buckets            uint16
+	Max_trl_levels         uint16
+	Bucket_core_counts     [8]uint16
+	Trl_freq_mhz           [6][8]uint16
+}
+type isstPerfLevelCpuMask struct {
+	Socket_id       uint8
+	Power_domain_id uint8
+	Level           uint8
+	Punit_cpu_map   uint8
+	Mask            uint64
+	Cpu_buffer_size uint16
+	Cpu_buffer      [1]int8
+	Pad_cgo_0       [5]byte
+}
+type isstBaseFreqInfo struct {
+	Socket_id              uint8
+	Power_domain_id        uint8
+	Level                  uint16
+	High_base_freq_mhz     uint16
+	Low_base_freq_mhz      uint16
+	Tjunction_max_c        uint16
+	Thermal_design_power_w uint16
+}
+type isstTurboFreqInfo struct {
+	Socket_id          uint8
+	Power_domain_id    uint8
+	Level              uint16
+	Max_clip_freqs     uint16
+	Max_buckets        uint16
+	Max_trl_levels     uint16
+	Lp_clip_freq_mhz   [6]uint16
+	Bucket_core_counts [8]uint16
+	Trl_freq_mhz       [6][8]uint16
 }

@@ -83,7 +83,7 @@ func FuzzClosSetup(f *testing.F) {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
-		info, err := getSinglePackageInfo(pkgs[pkg].pkg)
+		info, err := backend.getSinglePackageInfo(pkgs[pkg].pkg)
 		if err != nil {
 			t.Errorf("failed to get package info: %v", err)
 		}
