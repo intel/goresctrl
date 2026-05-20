@@ -126,6 +126,20 @@ func GetPackageInfo(pkgs ...int) (map[int]*SstPackageInfo, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert SST info for package %d: %w", i, err)
 		}
+		if info.BFSupported {
+			levelInfo, err := legacyBackend.getPerfLevelInfo(packages[i], info.PPCurrentLevel)
+			if err != nil {
+				sstlog.Warn("failed to get BF core info for legacy API", "package", i, "level", info.PPCurrentLevel, "error", err)
+			} else {
+				for _, puInfo := range levelInfo {
+					if info.BFCores == nil {
+						info.BFCores = puInfo.BF.HighPriorityCPUs.Clone()
+					} else {
+						info.BFCores.Add(puInfo.BF.HighPriorityCPUs.Members()...)
+					}
+				}
+			}
+		}
 		result[i] = info
 	}
 
@@ -462,10 +476,6 @@ func statusFromPackage(pkg *cpuPackageInfo, pi *PackageStatus) (*SstPackageInfo,
 		ClosStatus:     closInfos,
 		ClosCPUInfo:    make(ClosCPUSet),
 	}
-	if primary.BF.Cores != nil {
-		info.BFCores = primary.BF.Cores.Clone()
-	}
-
 	// Merge per-CLOS CPU sets from all punits (package-wide association).
 	for _, punit := range pi.Punits {
 		for i, ci := range punit.Clos {

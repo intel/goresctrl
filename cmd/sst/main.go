@@ -222,17 +222,13 @@ func printStatusTable(allInfo map[utils.ID]*sst.PackageStatus) {
 	// BF table
 	fmt.Println("\nSST-BF (Base Frequency):")
 	w = newTable()
-	fmt.Fprintln(w, "  PKG\tPUNIT\tSUPPORTED\tENABLED\tHIGH-FREQ CORES")
+	fmt.Fprintln(w, "  PKG\tPUNIT\tSUPPORTED\tENABLED")
 	for _, pkgID := range pkgIDs {
 		for _, punitID := range slices.Sorted(maps.Keys(allInfo[pkgID].Punits)) {
 			pu := allInfo[pkgID].Punits[punitID]
-			cores := "-"
-			if pu.BF.Supported {
-				cores = idSetStr(pu.BF.Cores)
-			}
-			fmt.Fprintf(w, "  %d\t%d\t%v\t%v\t%s\n",
+			fmt.Fprintf(w, "  %d\t%d\t%v\t%v\n",
 				pkgID, punitID,
-				pu.BF.Supported, pu.BF.Enabled, cores)
+				pu.BF.Supported, pu.BF.Enabled)
 		}
 	}
 	w.Flush()
