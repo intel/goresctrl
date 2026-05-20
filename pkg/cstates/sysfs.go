@@ -45,7 +45,7 @@ func NewSysfs() sysfsIface {
 }
 
 func (fs *sysfs) PossibleCpus() (string, error) {
-	return fs.readString(goresctrlpath.Path("sys/devices/system/cpu/possible"))
+	return fs.readString("sys/devices/system/cpu/possible")
 }
 
 func (fs *sysfs) CpuidleStates(cpu utils.ID) ([]int, error) {
