@@ -31,7 +31,7 @@ func enableBF(pkgId ...int) error {
 		fmt.Printf("Enabling BF for package(s) %v\n", pkgId)
 	}
 
-	if err := sst.EnableBF(pkgId...); err != nil {
+	if err := sst.EnableBF(pkgId...); err != nil { //nolint:staticcheck // deprecated
 		return err
 	}
 
@@ -45,7 +45,7 @@ func disableBF(pkgId ...int) error {
 		fmt.Printf("Disabling BF for package(s) %v\n", pkgId)
 	}
 
-	if err := sst.DisableBF(pkgId...); err != nil {
+	if err := sst.DisableBF(pkgId...); err != nil { //nolint:staticcheck // deprecated
 		return err
 	}
 

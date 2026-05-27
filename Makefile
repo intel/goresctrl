@@ -3,6 +3,10 @@ CMDS := $(shell ls cmd)
 
 Q := @
 
+.PHONY: generate
+generate:
+	$(GO_CMD) generate ./pkg/sst/...
+
 .PHONY: all
 all: test build
 

@@ -43,8 +43,8 @@ func subCmdCP(args []string) error {
 
 	var packageId int
 	var pkgs []int
-	var info *sst.SstPackageInfo
-	var infomap map[int]*sst.SstPackageInfo
+	var info *sst.SstPackageInfo            //nolint:staticcheck // deprecated
+	var infomap map[int]*sst.SstPackageInfo //nolint:staticcheck // deprecated
 	var err error
 	var priority int
 
@@ -80,7 +80,7 @@ func subCmdCP(args []string) error {
 	}
 
 	if reset {
-		err := sst.ResetCPConfig()
+		err := sst.ResetCPConfig() //nolint:staticcheck // deprecated
 		_ = printPackageInfo()
 		return err
 	}
@@ -116,10 +116,10 @@ func subCmdCP(args []string) error {
 			return fmt.Errorf("CLOS not set, use -clos option")
 		}
 
-		cpu2Clos := make(sst.ClosCPUSet, 1)
+		cpu2Clos := make(sst.ClosCPUSet, 1) //nolint:staticcheck // deprecated
 		cpu2Clos[clos] = cpus
 
-		if err := sst.ConfigureCP(info, priority, &cpu2Clos); err != nil {
+		if err := sst.ConfigureCP(info, priority, &cpu2Clos); err != nil { //nolint:staticcheck // deprecated
 			return err
 		}
 
@@ -132,7 +132,7 @@ func subCmdCP(args []string) error {
 			return fmt.Errorf("no packages set, invalid value %q", packageIds)
 		}
 
-		closinfo := sst.SstClosInfo{
+		closinfo := sst.SstClosInfo{ //nolint:staticcheck // deprecated
 			EPP:                  epp,
 			ProportionalPriority: proportionalPriority,
 			MinFreq:              minFreq,
@@ -140,13 +140,13 @@ func subCmdCP(args []string) error {
 			DesiredFreq:          desiredFreq,
 		}
 
-		infomap, err = sst.GetPackageInfo(pkgs...)
+		infomap, err = sst.GetPackageInfo(pkgs...) //nolint:staticcheck // deprecated
 		if err != nil {
 			return fmt.Errorf("cannot get package info: %w", err)
 		}
 
 		for _, info = range infomap {
-			if err := sst.ClosSetup(info, clos, &closinfo); err != nil {
+			if err := sst.ClosSetup(info, clos, &closinfo); err != nil { //nolint:staticcheck // deprecated
 				return fmt.Errorf("cannot set Clos: %w", err)
 			}
 		}
@@ -160,7 +160,7 @@ func subCmdCP(args []string) error {
 		if err != nil {
 			return err
 		}
-		infomap, err = sst.GetPackageInfo(pkgs...)
+		infomap, err = sst.GetPackageInfo(pkgs...) //nolint:staticcheck // deprecated
 		if err != nil {
 			return fmt.Errorf("cannot get package info: %w", err)
 		}
@@ -171,14 +171,14 @@ func subCmdCP(args []string) error {
 			if enable {
 				fmt.Printf("enabling CP for package %d\n", packageId)
 
-				err = sst.EnableCP(info)
+				err = sst.EnableCP(info) //nolint:staticcheck // deprecated
 				if err != nil {
 					return err
 				}
 			} else if disable {
 				fmt.Printf("disabling CP for package %d\n", packageId)
 
-				err = sst.DisableCP(info)
+				err = sst.DisableCP(info) //nolint:staticcheck // deprecated
 				if err != nil {
 					return err
 				}
@@ -195,9 +195,9 @@ func subCmdCP(args []string) error {
 	return nil
 }
 
-func getPackage(packageStr string, cpus utils.IDSet) (map[int]*sst.SstPackageInfo, *sst.SstPackageInfo, []int, error) {
-	var infomap map[int]*sst.SstPackageInfo
-	var info *sst.SstPackageInfo
+func getPackage(packageStr string, cpus utils.IDSet) (map[int]*sst.SstPackageInfo, *sst.SstPackageInfo, []int, error) { //nolint:staticcheck // deprecated
+	var infomap map[int]*sst.SstPackageInfo //nolint:staticcheck // deprecated
+	var info *sst.SstPackageInfo            //nolint:staticcheck // deprecated
 	var packageId int
 	var err error
 
@@ -214,7 +214,7 @@ func getPackage(packageStr string, cpus utils.IDSet) (map[int]*sst.SstPackageInf
 	if len(pkgs) == 0 {
 		// User has not specified a package, figure it out from the
 		// first CPU in the list.
-		infomap, err = sst.GetPackageInfo()
+		infomap, err = sst.GetPackageInfo() //nolint:staticcheck // deprecated
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -227,7 +227,7 @@ func getPackage(packageStr string, cpus utils.IDSet) (map[int]*sst.SstPackageInf
 		}
 	} else {
 		// User has specified one package, make sure all the CPUs belong to it.
-		infomap, err = sst.GetPackageInfo(pkgs...)
+		infomap, err = sst.GetPackageInfo(pkgs...) //nolint:staticcheck // deprecated
 		if err != nil {
 			return nil, nil, nil, err
 		}
