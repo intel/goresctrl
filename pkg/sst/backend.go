@@ -138,6 +138,26 @@ func ppLevelsFromMax(maxLevel int) []int {
 	return levels
 }
 
+// puCPUMaskToIDSet converts a 64-bit punit core bitmask to a set of logical CPU IDs
+// using the punit's coreCPUs reverse map.
+func puCPUMaskToIDSet(pu *punitInfo, mask uint64) utils.IDSet {
+	cpus := make(utils.IDSet)
+	for m := mask; m != 0; m &= m - 1 {
+		bit := utils.ID(bits.TrailingZeros64(m))
+		if set, ok := pu.coreCPUs[bit]; ok {
+			cpus.Add(set.Members()...)
+		}
+	}
+	return cpus
+}
+
+func (h *backend) getPerfLevelInfo(pkg *cpuPackageInfo, level int) (map[utils.ID]*PerfLevelInfo, error) {
+	if h.isTPMIPlatform() {
+		return getPerfLevelInfoTPMI(pkg, level)
+	}
+	return getPerfLevelInfoMbox(pkg, level)
+}
+
 func (h *backend) getPackageStatus(pkg *cpuPackageInfo) (*PackageStatus, error) {
 	if h.isTPMIPlatform() {
 		return getPackageInfoTPMI(pkg)
@@ -356,21 +376,6 @@ func getPackageInfoTPMI(pkg *cpuPackageInfo) (*PackageStatus, error) {
 			},
 		}
 
-		// Read BF cores for this punit
-		if punit.BF.Supported {
-			punit.BF.Cores = utils.IDSet{}
-			mask, err := tpmi.BFGetCoreMask(socketID, punitID, uint8(perfInfo.Current_level))
-			if err != nil {
-				return nil, err
-			}
-			for m := mask; m != 0; m &= m - 1 {
-				bit := utils.ID(bits.TrailingZeros64(m))
-				if cpus, ok := pu.coreCPUs[bit]; ok {
-					punit.BF.Cores.Add(cpus.Members()...)
-				}
-			}
-		}
-
 		// Read CP state for this punit
 		cpState, err := tpmi.CPGetState(socketID, punitID)
 		if err != nil {
@@ -454,30 +459,6 @@ func getPackageInfoMbox(pkg *cpuPackageInfo) (*PackageStatus, error) {
 		return nil, err
 	}
 
-	// Read BF cores
-	var bfCores utils.IDSet
-	if control.BFSupported {
-		bfCores = utils.IDSet{}
-		pu := pkg.punits[0]
-		var maxCoreID utils.ID
-		for coreID := range pu.coreCPUs {
-			if coreID > maxCoreID {
-				maxCoreID = coreID
-			}
-		}
-		for i := 0; i <= int(maxCoreID)/32; i++ {
-			mask, err := mbox.BFReadCoreMask(cpu, ppInfo.CurrentLevel, i)
-			if err != nil {
-				return nil, err
-			}
-			// Iterate over the set bits in the mask
-			for m := mask; m != 0; m &= m - 1 {
-				bit := bits.TrailingZeros32(m)
-				bfCores.Add(pu.coreCPUs[utils.ID(i*32+bit)].Members()...)
-			}
-		}
-	}
-
 	cpStatus, err := mbox.CPReadStatus(cpu)
 	if err != nil {
 		return nil, err
@@ -547,10 +528,178 @@ func getPackageInfoMbox(pkg *cpuPackageInfo) (*PackageStatus, error) {
 		},
 		Clos: closInfos,
 	}
-	if control.BFSupported && bfCores != nil {
-		punit.BF.Cores = bfCores
-	}
 	info.Punits[0] = punit
 
 	return info, nil
+}
+
+// getPerfLevelInfoTPMI retrieves detailed PP level info for each TPMI punit.
+func getPerfLevelInfoTPMI(pkg *cpuPackageInfo, level int) (map[utils.ID]*PerfLevelInfo, error) {
+	result := make(map[utils.ID]*PerfLevelInfo, len(pkg.punits))
+	socketID := pkg.id
+
+	for _, pu := range pkg.punits {
+		punitID := pu.id
+
+		// Validate requested level against this punit's level mask.
+		perfInfo, err := tpmi.PPGetPerfLevels(socketID, punitID)
+		if err != nil {
+			return nil, fmt.Errorf("punit %d: failed to read perf levels: %w", punitID, err)
+		}
+		if perfInfo.Level_mask&(1<<uint(level)) == 0 {
+			return nil, fmt.Errorf("punit %d: level %d not available (mask %#02x)", punitID, level, perfInfo.Level_mask)
+		}
+
+		cpuMask, err := tpmi.PerfLevelGetCPUMask(socketID, punitID, uint8(level))
+		if err != nil {
+			return nil, fmt.Errorf("punit %d: %w", punitID, err)
+		}
+
+		info := &PerfLevelInfo{
+			CPUs: puCPUMaskToIDSet(pu, cpuMask),
+		}
+
+		// BF info
+		if perfInfo.Sst_bf_support != 0 {
+			bfData, err := tpmi.BFGetInfo(socketID, punitID, uint8(level))
+			if err != nil {
+				return nil, fmt.Errorf("punit %d: BF info: %w", punitID, err)
+			}
+			bfMask, err := tpmi.BFGetCoreMask(socketID, punitID, uint8(level))
+			if err != nil {
+				return nil, fmt.Errorf("punit %d: BF core mask: %w", punitID, err)
+			}
+			info.BF = BFInfo{
+				Supported:            true,
+				HighPriorityBaseFreq: int(bfData.High_base_freq_mhz),
+				LowPriorityBaseFreq:  int(bfData.Low_base_freq_mhz),
+				HighPriorityCPUs:     puCPUMaskToIDSet(pu, bfMask),
+			}
+		}
+
+		// TF info
+		if perfInfo.Sst_tf_support != 0 {
+			tfData, err := tpmi.TFGetInfo(socketID, punitID, uint8(level))
+			if err != nil {
+				return nil, fmt.Errorf("punit %d: TF info: %w", punitID, err)
+			}
+			numClip := min(int(tfData.Max_clip_freqs), len(tfData.Lp_clip_freq_mhz))
+			numTFLevels := min(int(tfData.Max_trl_levels), len(tfData.Trl_freq_mhz))
+			numTFBuckets := min(int(tfData.Max_buckets), len(tfData.Bucket_core_counts))
+			var lpClip []TRLFreqInfo
+			for i := range numClip {
+				if f := int(tfData.Lp_clip_freq_mhz[i]); f != 0 {
+					lpClip = append(lpClip, TRLFreqInfo{ID: i, Freq: f})
+				}
+			}
+			var tfBuckets []TFBucketInfo
+			for b := range numTFBuckets {
+				coreCount := int(tfData.Bucket_core_counts[b])
+				if coreCount == 0 {
+					continue
+				}
+				var freqs []TRLFreqInfo
+				for l := range numTFLevels {
+					if f := int(tfData.Trl_freq_mhz[l][b]); f != 0 {
+						freqs = append(freqs, TRLFreqInfo{ID: l, Freq: f})
+					}
+				}
+				tfBuckets = append(tfBuckets, TFBucketInfo{
+					ID:                    b,
+					HighPriorityCoreCount: coreCount,
+					MaxFreqs:              freqs,
+				})
+			}
+			info.TF = TFInfo{
+				Supported:   true,
+				LPClipFreqs: lpClip,
+				Buckets:     tfBuckets,
+			}
+		}
+
+		result[utils.ID(punitID)] = info
+	}
+	return result, nil
+}
+
+// getPerfLevelInfoMbox retrieves detailed PP level info via the Mbox interface.
+func getPerfLevelInfoMbox(pkg *cpuPackageInfo, level int) (map[utils.ID]*PerfLevelInfo, error) {
+	if len(pkg.punits) == 0 {
+		return make(map[utils.ID]*PerfLevelInfo), nil
+	}
+	pu := pkg.punits[0]
+	cpu := uint16(pu.cpus.Members()[0])
+
+	// Validate requested level.
+	ppInfo, err := mbox.PPReadInfo(cpu)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read PP info: %w", err)
+	}
+	if level < 0 || level > ppInfo.MaxLevel {
+		return nil, fmt.Errorf("level %d not available (max %d)", level, ppInfo.MaxLevel)
+	}
+
+	cpuMask, err := mbox.PerfLevelGetCoreMask64(cpu, level)
+	if err != nil {
+		return nil, err
+	}
+
+	info := &PerfLevelInfo{
+		CPUs: puCPUMaskToIDSet(pu, cpuMask),
+	}
+
+	if ppInfo.Supported {
+		control, err := mbox.PPReadTDPControl(cpu, level)
+		if err != nil {
+			return nil, err
+		}
+
+		// BF info.
+		info.BF.Supported = control.BFSupported
+		if control.BFSupported {
+			bfData, err := mbox.BFGetInfo(cpu, level)
+			if err != nil {
+				return nil, fmt.Errorf("BF level data: %w", err)
+			}
+			info.BF.HighPriorityBaseFreq = bfData.HighPriorityBaseFreqRatio * 100
+			info.BF.LowPriorityBaseFreq = bfData.LowPriorityBaseFreqRatio * 100
+			info.BF.HighPriorityCPUs = puCPUMaskToIDSet(pu, bfData.CoreMask)
+		}
+
+		// TF info.
+		info.TF.Supported = control.TFSupported
+		if control.TFSupported {
+			tfData, err := mbox.TFGetInfo(cpu, level)
+			if err != nil {
+				return nil, fmt.Errorf("TF level data: %w", err)
+			}
+			var lpClip []TRLFreqInfo
+			for i, r := range tfData.LPClipRatios {
+				if f := r * 100; f != 0 {
+					lpClip = append(lpClip, TRLFreqInfo{ID: i, Freq: f})
+				}
+			}
+			var tfBuckets []TFBucketInfo
+			for bucketID, hpCoreCount := range tfData.HPCoreCounts {
+				if hpCoreCount == 0 {
+					continue
+				}
+				var freqs []TRLFreqInfo
+				for trlLvl, ratios := range tfData.HPTRLRatios {
+					if f := ratios[bucketID] * 100; f != 0 {
+						freqs = append(freqs, TRLFreqInfo{ID: trlLvl, Freq: f})
+					}
+				}
+				tfBuckets = append(tfBuckets, TFBucketInfo{
+					ID:                    bucketID,
+					HighPriorityCoreCount: hpCoreCount,
+					MaxFreqs:              freqs,
+				})
+			}
+			info.TF.LPClipFreqs = lpClip
+			info.TF.Buckets = tfBuckets
+		}
+	}
+
+	return map[utils.ID]*PerfLevelInfo{0: info}, nil
 }
