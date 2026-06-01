@@ -1,5 +1,8 @@
+//go:build amd64
+// +build amd64
+
 /*
-Copyright 2021-2026 Intel Corporation
+Copyright 2026 Intel Corporation
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,18 +17,19 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package sst
+// This file is used for auto-generation of types_msr_amd64.go.
+// Regenerate with: go generate ./pkg/sst/...
+// Requires kernel source tree at $KERNEL_SRC_DIR (default: /usr/src/linux).
+package isst
 
-import (
-	"log/slog"
+// #include <linux/isst_if.h>
+// #include <linux/ioctl.h>
+//
+import "C"
 
-	"github.com/intel/goresctrl/pkg/sst/internal/isst"
+const (
+	ISST_IF_MSR_COMMAND = C.ISST_IF_MSR_COMMAND
 )
 
-var sstlog *slog.Logger = slog.Default()
-
-// SetLogger sets the logger instance used by the package and its sub-packages.
-func SetLogger(l *slog.Logger) {
-	sstlog = l
-	isst.SetLogger(l)
-}
+type MsrCmd C.struct_isst_if_msr_cmd
+type MsrCmds C.struct_isst_if_msr_cmds

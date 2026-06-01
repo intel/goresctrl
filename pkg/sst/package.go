@@ -50,9 +50,8 @@ type PPStatus struct {
 
 // BFStatus contains SST-BF (Base Frequency) state.
 type BFStatus struct {
-	Supported bool        `json:"supported"`
-	Enabled   bool        `json:"enabled"`
-	Cores     utils.IDSet `json:"cores,omitempty"`
+	Supported bool `json:"supported"`
+	Enabled   bool `json:"enabled"`
 }
 
 // TFStatus contains SST-TF (Turbo Frequency) state.
@@ -103,6 +102,52 @@ func (p CPPriorityType) Validate() bool {
 	}
 }
 
+// PerfLevelInfo contains detailed SST-PP information for one performance level.
+type PerfLevelInfo struct {
+	CPUs utils.IDSet `json:"cpus"`
+	BF   BFInfo      `json:"bf"`
+	TF   TFInfo      `json:"tf"`
+}
+
+// BFInfo contains SST-BF (Base Frequency) properties for one performance level.
+type BFInfo struct {
+	Supported            bool        `json:"supported"`
+	HighPriorityBaseFreq int         `json:"highPriorityBaseFreq,omitempty"` // MHz
+	LowPriorityBaseFreq  int         `json:"lowPriorityBaseFreq,omitempty"`  // MHz
+	HighPriorityCPUs     utils.IDSet `json:"highPriorityCPUs,omitempty"`
+}
+
+// TFInfo contains SST-TF (Turbo Frequency) properties for one performance level.
+//
+// Buckets group CPUs into high-priority sets by core count. Each bucket
+// defines how many cores receive elevated turbo frequencies and the maximum
+// frequency allowed at each TRL level for the priority cores.
+//
+// TRL (Turbo Ratio Limit) are limits for certain instruction-set workload
+// classes (e.g. SSE, AVX2, AVX-512).
+type TFInfo struct {
+	Supported bool `json:"supported"`
+	// LPClipFreqs contains the low-priority core frequency limits for each TRL level.
+	LPClipFreqs []TRLFreqInfo `json:"lpClipFreqs,omitempty"`
+	// Buckets contain info about TF buckets.
+	Buckets []TFBucketInfo `json:"buckets,omitempty"`
+}
+
+// TFBucketInfo holds SST-TF high-priority bucket data for one performance level.
+// Empty buckets (core count == 0) are omitted.
+type TFBucketInfo struct {
+	ID                    int `json:"id"`
+	HighPriorityCoreCount int `json:"highPriorityCoreCount"`
+	// MaxFreqs contains maximum turbo frequency for each TRL level.
+	MaxFreqs []TRLFreqInfo `json:"maxFreqs"`
+}
+
+// TRLFreqInfo holds a TRL level ID and its associated frequency in MHz.
+type TRLFreqInfo struct {
+	ID   int `json:"id"`
+	Freq int `json:"freq"` // MHz
+}
+
 // Package provides SST operations for one CPU package.
 type Package struct {
 	h   *Platform
@@ -117,6 +162,12 @@ func (p *Package) ID() utils.ID {
 // GetStatus returns the current status of SST features.
 func (p *Package) GetStatus() (*PackageStatus, error) {
 	return p.h.getPackageStatus(p.pkg)
+}
+
+// GetPerfLevelInfo returns detailed SST-PP data for the given performance level, indexed by punit ID.
+// Returns an error if the level is not available on any punit.
+func (p *Package) GetPerfLevelInfo(level int) (map[utils.ID]*PerfLevelInfo, error) {
+	return p.h.getPackagePerfLevelInfo(p.pkg, level)
 }
 
 // BFEnable enables SST-BF for this package.

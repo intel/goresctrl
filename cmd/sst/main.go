@@ -45,6 +45,7 @@ type subCmd struct {
 
 var subCmds = map[string]subCmd{
 	"status": {description: "Print current status of SST features", f: subCmdStatus},
+	"info":   {description: "Print detailed SST-PP level info", f: subCmdInfo},
 	"bf":     {description: "Configure SST-BF feature", f: subCmdBF},
 	"cp":     {description: "Configure SST-CP feature", f: subCmdCP},
 	"tf":     {description: "Configure SST-TF feature", f: subCmdTF},
@@ -222,17 +223,13 @@ func printStatusTable(allInfo map[utils.ID]*sst.PackageStatus) {
 	// BF table
 	fmt.Println("\nSST-BF (Base Frequency):")
 	w = newTable()
-	fmt.Fprintln(w, "  PKG\tPUNIT\tSUPPORTED\tENABLED\tHIGH-FREQ CORES")
+	fmt.Fprintln(w, "  PKG\tPUNIT\tSUPPORTED\tENABLED")
 	for _, pkgID := range pkgIDs {
 		for _, punitID := range slices.Sorted(maps.Keys(allInfo[pkgID].Punits)) {
 			pu := allInfo[pkgID].Punits[punitID]
-			cores := "-"
-			if pu.BF.Supported {
-				cores = idSetStr(pu.BF.Cores)
-			}
-			fmt.Fprintf(w, "  %d\t%d\t%v\t%v\t%s\n",
+			fmt.Fprintf(w, "  %d\t%d\t%v\t%v\n",
 				pkgID, punitID,
-				pu.BF.Supported, pu.BF.Enabled, cores)
+				pu.BF.Supported, pu.BF.Enabled)
 		}
 	}
 	w.Flush()
@@ -291,6 +288,170 @@ func printStatusTable(allInfo map[utils.ID]*sst.PackageStatus) {
 			cw.Flush()
 		}
 	}
+}
+
+func subCmdInfo(args []string) error {
+	level := -1
+	var format string
+	flags := flag.NewFlagSet("info", flag.ExitOnError)
+	flags.IntVar(&level, "level", -1, "Performance level to query (default: current level of the first package/punit)")
+	flags.StringVar(&format, "format", "table", "Output format: table, yaml, json")
+	addCommonFlags(flags)
+	addCommonPackageFlags(flags)
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if level < -1 {
+		return fmt.Errorf("invalid level %d: must be >= -1 (-1 uses the current level)", level)
+	}
+
+	h, err := initHandle()
+	if err != nil {
+		return err
+	}
+	pkgs, err := getPackageHandles(h)
+	if err != nil {
+		return err
+	}
+	if len(pkgs) == 0 {
+		return fmt.Errorf("no packages found")
+	}
+
+	// As default, use the perf level of the first package's first punit.
+	if level < 0 {
+		status, err := pkgs[0].GetStatus()
+		if err != nil {
+			return fmt.Errorf("failed to get status for package %d: %w", pkgs[0].ID(), err)
+		}
+		punits := slices.Sorted(maps.Keys(status.Punits))
+		if len(punits) == 0 {
+			return fmt.Errorf("package %d has no punits, cannot determine default level", pkgs[0].ID())
+		}
+		level = status.Punits[punits[0]].PP.CurrentLevel
+	}
+
+	type infoOutput struct {
+		Level    int                                          `json:"level"`
+		Packages map[utils.ID]map[utils.ID]*sst.PerfLevelInfo `json:"packages"`
+	}
+	out := infoOutput{
+		Level:    level,
+		Packages: make(map[utils.ID]map[utils.ID]*sst.PerfLevelInfo, len(pkgs)),
+	}
+	for _, pkg := range pkgs {
+		info, err := pkg.GetPerfLevelInfo(level)
+		if err != nil {
+			return fmt.Errorf("failed to get level %d info for package %d: %w", level, pkg.ID(), err)
+		}
+		out.Packages[utils.ID(pkg.ID())] = info
+	}
+
+	switch strings.ToLower(format) {
+	case "json":
+		data, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal info: %w", err)
+		}
+		fmt.Println(string(data))
+	case "yaml":
+		data, err := yaml.Marshal(out)
+		if err != nil {
+			return fmt.Errorf("failed to marshal info: %w", err)
+		}
+		fmt.Print(string(data))
+	case "table":
+		printInfoTable(level, out.Packages)
+	default:
+		return fmt.Errorf("unknown format %q (valid: table, yaml, json)", format)
+	}
+	return nil
+}
+
+// nolint:errcheck
+func printInfoTable(level int, allInfo map[utils.ID]map[utils.ID]*sst.PerfLevelInfo) {
+	freqsStr := func(freqs []sst.TRLFreqInfo) string {
+		if len(freqs) == 0 {
+			return "none"
+		}
+		parts := make([]string, len(freqs))
+		for i, f := range freqs {
+			parts[i] = strconv.Itoa(f.ID) + ":" + strconv.Itoa(f.Freq)
+		}
+		return strings.Join(parts, ", ")
+	}
+
+	idSetStr := func(s utils.IDSet) string {
+		if len(s) == 0 {
+			return "none"
+		}
+		return s.String()
+	}
+
+	newTable := func() *tabwriter.Writer {
+		return tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	}
+
+	pkgIDs := slices.Sorted(maps.Keys(allInfo))
+
+	// PP table
+	fmt.Printf("SST-PP (Perf Profile) [Level %d]:\n", level)
+	w := newTable()
+	fmt.Fprintln(w, "  PKG\tPUNIT\tCPUS")
+	for _, pkgID := range pkgIDs {
+		for _, punitID := range slices.Sorted(maps.Keys(allInfo[pkgID])) {
+			pu := allInfo[pkgID][punitID]
+			fmt.Fprintf(w, "  %d\t%d\t%s\n", pkgID, punitID, idSetStr(pu.CPUs))
+		}
+	}
+	w.Flush()
+
+	// BF table
+	fmt.Printf("\nSST-BF (Base Frequency) [Level %d]:\n", level)
+	w = newTable()
+	fmt.Fprintln(w, "  PKG\tPUNIT\tSUPPORTED\tHP BASE FREQ (MHz)\tLP BASE FREQ (MHz)\tHP CPUS")
+	for _, pkgID := range pkgIDs {
+		for _, punitID := range slices.Sorted(maps.Keys(allInfo[pkgID])) {
+			bf := allInfo[pkgID][punitID].BF
+			hpFreq, lpFreq, hpCPUs := "-", "-", "-"
+			if bf.Supported {
+				hpFreq = strconv.Itoa(bf.HighPriorityBaseFreq)
+				lpFreq = strconv.Itoa(bf.LowPriorityBaseFreq)
+				hpCPUs = idSetStr(bf.HighPriorityCPUs)
+			}
+			fmt.Fprintf(w, "  %d\t%d\t%v\t%s\t%s\t%s\n",
+				pkgID, punitID, bf.Supported, hpFreq, lpFreq, hpCPUs)
+		}
+	}
+	w.Flush()
+
+	// TF tables
+	fmt.Printf("\nSST-TF (Turbo Frequency) [Level %d]:\n", level)
+	w = newTable()
+	fmt.Fprintln(w, "  PKG\tPUNIT\tSUPPORTED\tLP CLIP FREQS PER TRL ID (MHz)")
+	for _, pkgID := range pkgIDs {
+		for _, punitID := range slices.Sorted(maps.Keys(allInfo[pkgID])) {
+			tf := allInfo[pkgID][punitID].TF
+			lpClip := "-"
+			if tf.Supported {
+				lpClip = freqsStr(tf.LPClipFreqs)
+			}
+			fmt.Fprintf(w, "  %d\t%d\t%v\t%s\n", pkgID, punitID, tf.Supported, lpClip)
+		}
+	}
+	w.Flush()
+
+	fmt.Printf("\nSST-TF (Turbo Frequency) Buckets [Level %d]:\n", level)
+	w = newTable()
+	fmt.Fprintln(w, "  PKG\tPUNIT\tBUCKET\tHP CORES\tMAX FREQS PER TRL ID (MHz)")
+	for _, pkgID := range pkgIDs {
+		for _, punitID := range slices.Sorted(maps.Keys(allInfo[pkgID])) {
+			for _, bucket := range allInfo[pkgID][punitID].TF.Buckets {
+				fmt.Fprintf(w, "  %d\t%d\t%d\t%d\t%s\n",
+					pkgID, punitID, bucket.ID, bucket.HighPriorityCoreCount, freqsStr(bucket.MaxFreqs))
+			}
+		}
+	}
+	w.Flush()
 }
 
 func subCmdBF(args []string) error {

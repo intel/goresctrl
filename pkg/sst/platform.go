@@ -21,7 +21,7 @@ import (
 	"os"
 	"slices"
 
-	"github.com/intel/goresctrl/pkg/sst/isst"
+	"github.com/intel/goresctrl/pkg/sst/internal/isst"
 	"github.com/intel/goresctrl/pkg/utils"
 )
 

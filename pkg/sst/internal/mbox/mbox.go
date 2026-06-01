@@ -19,7 +19,7 @@ package mbox
 import (
 	"fmt"
 
-	"github.com/intel/goresctrl/pkg/sst/isst"
+	"github.com/intel/goresctrl/pkg/sst/internal/isst"
 )
 
 // numClos is the number of CLOSes supported by SST-CP.
@@ -195,7 +195,7 @@ func CPSendClosCmd(cpu uint16, subCmd uint16, parameter uint32, reqData uint32) 
 	return isst.SendMMIOCmd(cpu, (id<<2)+offset, reqData, isBitSet(parameter, isst.MBOX_CMD_WRITE_BIT))
 }
 
-// ClosSetParam writes CLOS parameters for one CLOS. Frequency values are 8-bit ratios (×100 = MHz).
+// ClosSetParam writes CLOS parameters for one CLOS. Frequency values are 8-bit ratios (x100 = MHz).
 func ClosSetParam(cpu uint16, clos, epp, proportional, minFreq, maxFreq, desiredFreq uint8) error {
 	req := uint32(epp & 0x0f)
 	req |= uint32((proportional)&0x0f) << 4
@@ -311,7 +311,96 @@ func TFSetStatus(cpu uint16, ppCurrentLevel int, enable bool) error {
 	return nil
 }
 
-// getBits extracts bits i..j (inclusive) from val.
+// PerfLevelGetCoreMask64 reads the 64-bit punit core bitmask for a PP level.
+func PerfLevelGetCoreMask64(cpu uint16, level int) (uint64, error) {
+	lo, err := isst.SendMboxCmd(cpu, isst.CONFIG_TDP, isst.CONFIG_TDP_GET_CORE_MASK, 0, uint32(level))
+	if err != nil {
+		return 0, fmt.Errorf("failed to read level core mask (lo) at level %d: %w", level, err)
+	}
+	hi, err := isst.SendMboxCmd(cpu, isst.CONFIG_TDP, isst.CONFIG_TDP_GET_CORE_MASK, 0, uint32(level|(1<<8)))
+	if err != nil {
+		return 0, fmt.Errorf("failed to read level core mask (hi) at level %d: %w", level, err)
+	}
+	return uint64(lo) | (uint64(hi) << 32), nil
+}
+
+// BFInfo holds SST-BF properties for one PP level.
+type BFInfo struct {
+	HighPriorityBaseFreqRatio int // ratio (x100 = MHz)
+	LowPriorityBaseFreqRatio  int // ratio (x100 = MHz)
+	CoreMask                  uint64
+}
+
+// BFGetInfo reads SST-BF properties for one PP level.
+func BFGetInfo(cpu uint16, level int) (BFInfo, error) {
+	p1, err := isst.SendMboxCmd(cpu, isst.CONFIG_TDP, isst.CONFIG_TDP_PBF_GET_P1HI_P1LO_INFO, 0, uint32(level))
+	if err != nil {
+		return BFInfo{}, fmt.Errorf("failed to read BF P1HI/P1LO at level %d: %w", level, err)
+	}
+	lo, err := BFReadCoreMask(cpu, level, 0)
+	if err != nil {
+		return BFInfo{}, err
+	}
+	hi, err := BFReadCoreMask(cpu, level, 1)
+	if err != nil {
+		return BFInfo{}, err
+	}
+	return BFInfo{
+		HighPriorityBaseFreqRatio: int(getBits(p1, 8, 15)),
+		LowPriorityBaseFreqRatio:  int(getBits(p1, 0, 7)),
+		CoreMask:                  uint64(lo) | (uint64(hi) << 32),
+	}, nil
+}
+
+// TFInfo holds SST-TF properties for one PP level.
+// Note: Mbox TF only exposes up to 3 TRL levels (SSE=0, AVX2=1, AVX512=2).
+type TFInfo struct {
+	LPClipRatios [3]int    // x100 = MHz, indices 0=SSE, 1=AVX2, 2=AVX512
+	HPCoreCounts [8]int    // high-priority core count per bucket
+	HPTRLRatios  [3][8]int // [trllevel][bucket] ratio, x100 = MHz
+}
+
+// TFGetInfo reads SST-TF properties for one PP level.
+func TFGetInfo(cpu uint16, level int) (TFInfo, error) {
+	var d TFInfo
+
+	// LP clip ratios (3 ISA levels packed in one response)
+	lp, err := isst.SendMboxCmd(cpu, isst.CONFIG_TDP, isst.CONFIG_TDP_GET_FACT_LP_CLIPPING_RATIO, 0, uint32(level))
+	if err != nil {
+		return d, fmt.Errorf("failed to read TF LP clip ratios at level %d: %w", level, err)
+	}
+	d.LPClipRatios[0] = int(getBits(lp, 0, 7))
+	d.LPClipRatios[1] = int(getBits(lp, 8, 15))
+	d.LPClipRatios[2] = int(getBits(lp, 16, 23))
+
+	// HP core counts (8 buckets, 4 per read)
+	for i := range 2 {
+		rsp, err := isst.SendMboxCmd(cpu, isst.CONFIG_TDP, isst.CONFIG_TDP_GET_FACT_HP_TURBO_LIMIT_NUMCORES, 0,
+			uint32(level|(i<<8)))
+		if err != nil {
+			return d, fmt.Errorf("failed to read TF HP core counts at level %d: %w", level, err)
+		}
+		for j := range 4 {
+			d.HPCoreCounts[i*4+j] = int(getBits(rsp, uint32(j*8), uint32(j*8+7)))
+		}
+	}
+
+	// HP TRL ratios for each TRL level
+	for k := range 3 {
+		for i := range 2 {
+			rsp, err := isst.SendMboxCmd(cpu, isst.CONFIG_TDP, isst.CONFIG_TDP_GET_FACT_HP_TURBO_LIMIT_RATIOS, 0,
+				uint32(level|(i<<8)|(k<<16)))
+			if err != nil {
+				return d, fmt.Errorf("failed to read TF HP TRL ratios for perf level %d TRL level %d: %w", level, k, err)
+			}
+			for j := range 4 {
+				d.HPTRLRatios[k][i*4+j] = int(getBits(rsp, uint32(j*8), uint32(j*8+7)))
+			}
+		}
+	}
+	return d, nil
+}
+
 func getBits(val, i, j uint32) uint32 {
 	lsb := i
 	msb := j
