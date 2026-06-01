@@ -19,7 +19,7 @@ package sst
 import (
 	"log/slog"
 
-	"github.com/intel/goresctrl/pkg/sst/isst"
+	"github.com/intel/goresctrl/pkg/sst/internal/isst"
 )
 
 var sstlog *slog.Logger = slog.Default()

@@ -22,9 +22,9 @@ import (
 	"math/bits"
 	"sync"
 
-	"github.com/intel/goresctrl/pkg/sst/isst"
-	"github.com/intel/goresctrl/pkg/sst/mbox"
-	"github.com/intel/goresctrl/pkg/sst/tpmi"
+	"github.com/intel/goresctrl/pkg/sst/internal/isst"
+	"github.com/intel/goresctrl/pkg/sst/internal/mbox"
+	"github.com/intel/goresctrl/pkg/sst/internal/tpmi"
 	"github.com/intel/goresctrl/pkg/utils"
 )
 

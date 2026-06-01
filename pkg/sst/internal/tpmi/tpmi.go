@@ -21,7 +21,7 @@ import (
 	"math/bits"
 	"unsafe"
 
-	"github.com/intel/goresctrl/pkg/sst/isst"
+	"github.com/intel/goresctrl/pkg/sst/internal/isst"
 )
 
 // numClos is the number of CLOSes supported by SST-CP.
