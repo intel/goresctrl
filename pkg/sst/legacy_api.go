@@ -55,7 +55,7 @@ type SstPackageInfo struct {
 	TFSupported bool
 	TFEnabled   bool
 
-	ClosStatus  [NumClos]SstClosInfo
+	ClosInfo    [NumClos]SstClosInfo
 	ClosCPUInfo ClosCPUSet
 }
 
@@ -318,7 +318,7 @@ func ClosSetup(info *SstPackageInfo, clos int, closInfo *SstClosInfo) error {
 		return fmt.Errorf("invalid value %d for proportionalPriority", closInfo.ProportionalPriority)
 	}
 
-	info.ClosStatus[clos] = *closInfo
+	info.ClosInfo[clos] = *closInfo
 
 	closConfig := ClosConfig{
 		ProportionalPriority: closInfo.ProportionalPriority,
@@ -459,7 +459,7 @@ func statusFromPackage(pkg *cpuPackageInfo, pi *PackageStatus) (*SstPackageInfo,
 		CPSupported:    primary.CP.Supported,
 		CPEnabled:      primary.CP.Enabled,
 		CPPriority:     primary.CP.Priority,
-		ClosStatus:     closInfos,
+		ClosInfo:       closInfos,
 		ClosCPUInfo:    make(ClosCPUSet),
 	}
 	if primary.BF.Cores != nil {
