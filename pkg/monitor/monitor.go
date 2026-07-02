@@ -17,12 +17,14 @@ limitations under the License.
 package monitor
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 )
@@ -49,6 +51,12 @@ var (
 	// ErrBadClass is returned when an rdtClass name is unsafe (path
 	// traversal, empty, or contains separators).
 	ErrBadClass = errors.New("monitor: invalid rdt class")
+
+	// ErrClassMismatch is returned by AssignPID when the target PID already
+	// belongs to a non-root control group that differs from the mon_group's
+	// parent ctrl_group. Writing the PID would silently overwrite its CLOSID
+	// (its CAT/MBA allocation), so the assignment is refused instead.
+	ErrClassMismatch = errors.New("monitor: pid belongs to a different control group")
 )
 
 var log *slog.Logger = slog.Default()
@@ -115,8 +123,9 @@ type entry struct {
 
 // Group is a handle to one mon_group on the resctrl filesystem.
 type Group struct {
-	key string
-	dir string
+	key   string
+	dir   string
+	class string
 }
 
 // Key returns the canonicalized tracking key (e.g. dashed pod UID) for this group.
@@ -124,6 +133,10 @@ func (g *Group) Key() string { return g.key }
 
 // Path returns the absolute filesystem path of the mon_group directory.
 func (g *Group) Path() string { return g.dir }
+
+// Class returns the rdtClass (ctrl_group) the mon_group lives under. An empty
+// string means the mon_group is under the root resctrl group.
+func (g *Group) Class() string { return g.class }
 
 // New creates a Manager with the given options.
 func New(o Options) (*Manager, error) {
@@ -197,7 +210,7 @@ func (m *Manager) EnsureGroup(key, rdtClass string) (*Group, error) {
 		info, err := os.Stat(e.dir)
 		switch {
 		case err == nil && info.IsDir():
-			return &Group{key: key, dir: e.dir}, nil
+			return &Group{key: key, dir: e.dir, class: e.rdtClass}, nil
 		case err == nil && !info.IsDir():
 			return nil, fmt.Errorf("tracked mon_group path %s exists but is not a directory", e.dir)
 		case err != nil && !errors.Is(err, os.ErrNotExist):
@@ -257,7 +270,7 @@ func (m *Manager) EnsureGroup(key, rdtClass string) (*Group, error) {
 		dir:      monGroupDir,
 		rdtClass: rdtClass,
 	}
-	return &Group{key: key, dir: monGroupDir}, nil
+	return &Group{key: key, dir: monGroupDir, class: rdtClass}, nil
 }
 
 // AssignPID writes pid to the group's tasks file. The kernel assigns the RMID
@@ -275,6 +288,27 @@ func (m *Manager) AssignPID(key string, pid int) error {
 		return fmt.Errorf("%w: %q", ErrNotTracked, key)
 	}
 
+	// Guard against silently clobbering an existing CAT/MBA allocation.
+	//
+	// Writing a PID into a mon_group's tasks file moves that task into the
+	// mon_group's *parent* ctrl_group, overwriting the task's CLOSID. In a
+	// pod-scoped model a pod's mon_group lives under a single ctrl_group, but a
+	// pod may contain containers in different RDT classes (e.g. an application
+	// and a sidecar). Assigning an off-class container's PID here would
+	// silently move it out of its own allocation class. Detect that case and
+	// refuse with ErrClassMismatch so the caller gets an explicit, catchable
+	// error instead of corrupting the allocation. Tasks that are currently in
+	// the root group (unallocated) are allowed to be placed into the group's
+	// class, which is the normal attribution path.
+	cur, err := m.controlGroupOfPID(pid)
+	if err != nil {
+		return fmt.Errorf("failed to determine current control group for pid %d (key %s): %w", pid, key, err)
+	}
+	if cur != "" && cur != e.rdtClass {
+		return fmt.Errorf("%w: pid %d is in control group %q but mon_group %q is under %q",
+			ErrClassMismatch, pid, cur, key, classDisplay(e.rdtClass))
+	}
+
 	tasksPath := filepath.Join(e.dir, tasksFile)
 	f, err := os.OpenFile(tasksPath, os.O_WRONLY, 0)
 	if err != nil {
@@ -288,6 +322,76 @@ func (m *Manager) AssignPID(key string, pid int) error {
 	}
 	log.Info("assigned PID to mon_group", "key", key, "pid", pid)
 	return nil
+}
+
+// controlGroupOfPID returns the non-root resctrl ctrl_group name that
+// currently owns pid, or "" if pid is not in any non-root control group (i.e.
+// it is in the root group or not managed by resctrl).
+//
+// Only non-root ctrl_groups are scanned. Their tasks files list just the
+// explicitly-allocated tasks (small), whereas the root tasks file enumerates
+// every task on the system. Scanning only the class directories is sufficient
+// for the AssignPID guard, which needs to detect whether pid already belongs
+// to a *different* allocation class before it would be silently moved.
+func (m *Manager) controlGroupOfPID(pid int) (string, error) {
+	entries, err := os.ReadDir(m.root)
+	if err != nil {
+		return "", fmt.Errorf("failed to read resctrl root %s: %w", m.root, err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		// Skip kernel-managed directories; everything else at the root is a
+		// user-created ctrl_group.
+		if name == monGroupsDir || name == "mon_data" || name == "info" {
+			continue
+		}
+		found, err := pidInTasksFile(filepath.Join(m.root, name, tasksFile), pid)
+		if err != nil {
+			return "", err
+		}
+		if found {
+			return name, nil
+		}
+	}
+	return "", nil
+}
+
+// pidInTasksFile reports whether pid appears in the resctrl tasks file at path.
+// A missing tasks file (ENOENT) is treated as "not present" rather than an
+// error, so an out-of-band removed ctrl_group does not fail the scan.
+func pidInTasksFile(path string, pid int) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to open tasks file %s: %w", path, err)
+	}
+	defer f.Close()
+
+	target := strconv.Itoa(pid)
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		if strings.TrimSpace(sc.Text()) == target {
+			return true, nil
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return false, fmt.Errorf("failed to read tasks file %s: %w", path, err)
+	}
+	return false, nil
+}
+
+// classDisplay renders an rdtClass name for error messages, mapping the empty
+// string (root ctrl_group) to a readable label.
+func classDisplay(c string) string {
+	if c == "" {
+		return "root"
+	}
+	return c
 }
 
 // Remove deletes the mon_group for key (kernel releases the RMID) and drops
@@ -471,7 +575,7 @@ func (m *Manager) Snapshot() map[string]*Group {
 	defer m.mu.Unlock()
 	out := make(map[string]*Group, len(m.entries))
 	for k, e := range m.entries {
-		out[k] = &Group{key: k, dir: e.dir}
+		out[k] = &Group{key: k, dir: e.dir, class: e.rdtClass}
 	}
 	return out
 }
