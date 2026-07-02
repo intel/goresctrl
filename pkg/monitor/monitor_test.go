@@ -335,6 +335,101 @@ func TestAssignPID_MultipleWrites(t *testing.T) {
 	assert.Contains(t, string(data), "200\n")
 }
 
+// TestAssignPID_RefusesCrossClass verifies that assigning a PID that already
+// belongs to a different non-root ctrl_group is refused with ErrClassMismatch,
+// so an off-class sidecar's allocation is not silently clobbered.
+func TestAssignPID_RefusesCrossClass(t *testing.T) {
+	tmpDir := t.TempDir()
+	// Two ctrl_groups pre-exist.
+	require.NoError(t, os.Mkdir(filepath.Join(tmpDir, "ClassA"), 0755))
+	require.NoError(t, os.Mkdir(filepath.Join(tmpDir, "ClassB"), 0755))
+	// The PID is already allocated to ClassB.
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "ClassB", "tasks"), []byte("777\n"), 0644))
+
+	mgr, err := New(Options{ResctrlRoot: tmpDir})
+	require.NoError(t, err)
+
+	// The pod's mon_group lives under ClassA.
+	grp, err := mgr.EnsureGroup("pod-uid-1", "ClassA")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(grp.Path(), "tasks"), nil, 0644))
+
+	err = mgr.AssignPID("pod-uid-1", 777)
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, ErrClassMismatch))
+
+	// The mon_group tasks file must remain empty (no clobbering write).
+	data, err := os.ReadFile(filepath.Join(grp.Path(), "tasks"))
+	require.NoError(t, err)
+	assert.Empty(t, string(data))
+}
+
+// TestAssignPID_AllowsSameClass verifies that a PID already in the group's own
+// ctrl_group is assigned normally (idempotent re-attribution within a class).
+func TestAssignPID_AllowsSameClass(t *testing.T) {
+	tmpDir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(tmpDir, "ClassA"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "ClassA", "tasks"), []byte("888\n"), 0644))
+
+	mgr, err := New(Options{ResctrlRoot: tmpDir})
+	require.NoError(t, err)
+
+	grp, err := mgr.EnsureGroup("pod-uid-1", "ClassA")
+	require.NoError(t, err)
+	tasksPath := filepath.Join(grp.Path(), "tasks")
+	require.NoError(t, os.WriteFile(tasksPath, nil, 0644))
+
+	require.NoError(t, mgr.AssignPID("pod-uid-1", 888))
+
+	data, err := os.ReadFile(tasksPath)
+	require.NoError(t, err)
+	assert.Equal(t, "888\n", string(data))
+}
+
+// TestAssignPID_AllowsFromRoot verifies that a PID not in any non-root
+// ctrl_group (i.e. still in the root group) is placed into the group's class.
+func TestAssignPID_AllowsFromRoot(t *testing.T) {
+	tmpDir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(tmpDir, "ClassA"), 0755))
+	// ClassA has no tasks file / does not contain the PID.
+
+	mgr, err := New(Options{ResctrlRoot: tmpDir})
+	require.NoError(t, err)
+
+	grp, err := mgr.EnsureGroup("pod-uid-1", "ClassA")
+	require.NoError(t, err)
+	assert.Equal(t, "ClassA", grp.Class())
+	tasksPath := filepath.Join(grp.Path(), "tasks")
+	require.NoError(t, os.WriteFile(tasksPath, nil, 0644))
+
+	require.NoError(t, mgr.AssignPID("pod-uid-1", 999))
+
+	data, err := os.ReadFile(tasksPath)
+	require.NoError(t, err)
+	assert.Equal(t, "999\n", string(data))
+}
+
+// TestAssignPID_RefusesRootGroupClobber verifies that a PID allocated to a
+// non-root class cannot be dragged into a root-scoped mon_group (which would
+// reset its CLOSID to the root/default allocation).
+func TestAssignPID_RefusesRootGroupClobber(t *testing.T) {
+	tmpDir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(tmpDir, "ClassB"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "ClassB", "tasks"), []byte("555\n"), 0644))
+
+	mgr, err := New(Options{ResctrlRoot: tmpDir})
+	require.NoError(t, err)
+
+	// Root-scoped mon_group (rdtClass == "").
+	grp, err := mgr.EnsureGroup("pod-uid-1", "")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(grp.Path(), "tasks"), nil, 0644))
+
+	err = mgr.AssignPID("pod-uid-1", 555)
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, ErrClassMismatch))
+}
+
 // --- Remove tests (Task 2.4) ---
 
 func TestRemove(t *testing.T) {
