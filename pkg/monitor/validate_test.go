@@ -1,3 +1,5 @@
+//go:build linux
+
 /*
 Copyright 2026 Intel Corporation
 
@@ -69,6 +71,25 @@ func TestCanonicalizePodUID(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, CanonicalizePodUID(tc.in))
+		})
+	}
+}
+
+func TestIsHex(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"empty string", "", false},
+		{"lowercase hex", "abcdef0123456789", true},
+		{"uppercase hex", "ABCDEF0123456789", true},
+		{"non-hex", "xyz", false},
+		{"mixed non-hex", "abcg", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, isHex(tc.in))
 		})
 	}
 }

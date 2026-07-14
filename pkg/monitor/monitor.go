@@ -1,3 +1,5 @@
+//go:build linux
+
 /*
 Copyright 2026 Intel Corporation
 
@@ -111,8 +113,9 @@ type Manager struct {
 	entries map[string]*entry // keyed by canonicalized key (e.g. dashed pod UID)
 
 	// Injectable filesystem operations for unit tests.
-	mkdir func(string, os.FileMode) error
-	rmdir func(string) error
+	mkdir    func(string, os.FileMode) error
+	mkdirAll func(string, os.FileMode) error
+	rmdir    func(string) error
 }
 
 // entry is the in-memory record for one tracked key.
@@ -165,6 +168,7 @@ func New(o Options) (*Manager, error) {
 		canonKey: canon,
 		entries:  make(map[string]*entry),
 		mkdir:    os.Mkdir,
+		mkdirAll: os.MkdirAll,
 		rmdir:    os.Remove,
 	}, nil
 }
@@ -240,7 +244,7 @@ func (m *Manager) EnsureGroup(key, rdtClass string) (*Group, error) {
 
 	// Ensure the mon_groups/ directory exists. On a real resctrl mount this
 	// is always present; for testing we create it if needed.
-	if err := os.MkdirAll(monGroupsPath, 0755); err != nil {
+	if err := m.mkdirAll(monGroupsPath, 0755); err != nil {
 		return nil, fmt.Errorf("mon_groups dir not available at %s: %w", monGroupsPath, err)
 	}
 
