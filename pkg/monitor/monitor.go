@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 )
 
@@ -61,15 +62,28 @@ var (
 	ErrClassMismatch = errors.New("monitor: pid belongs to a different control group")
 )
 
-var log *slog.Logger = slog.Default()
+// logPtr holds the package logger. It is an atomic pointer so that SetLogger
+// can be called concurrently with active Manager operations without racing the
+// goroutines that read the logger.
+var logPtr atomic.Pointer[slog.Logger]
 
-// SetLogger sets the logger used by the package. Safe to call before New.
-// A nil argument resets to the default logger.
+func init() {
+	logPtr.Store(slog.Default())
+}
+
+// log returns the current package logger.
+func log() *slog.Logger {
+	return logPtr.Load()
+}
+
+// SetLogger sets the logger used by the package. Safe to call before New and
+// concurrently with Manager operations. A nil argument resets to the default
+// logger.
 func SetLogger(l *slog.Logger) {
 	if l == nil {
 		l = slog.Default()
 	}
-	log = l
+	logPtr.Store(l)
 }
 
 // Options configures a Manager.
@@ -109,7 +123,7 @@ type Manager struct {
 	validKey func(string) bool
 	canonKey func(string) string
 
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	entries map[string]*entry // keyed by canonicalized key (e.g. dashed pod UID)
 
 	// Injectable filesystem operations for unit tests.
@@ -260,14 +274,14 @@ func (m *Manager) EnsureGroup(key, rdtClass string) (*Group, error) {
 			} else if !info.IsDir() {
 				return nil, fmt.Errorf("mon_group path %s exists but is not a directory", monGroupDir)
 			}
-			log.Info("adopting existing mon_group", "key", key, "dir", monGroupDir)
+			log().Info("adopting existing mon_group", "key", key, "dir", monGroupDir)
 		} else if errors.Is(err, syscall.ENOSPC) {
 			return nil, fmt.Errorf("%w (key %s): %w", ErrNoRMIDs, key, err)
 		} else {
 			return nil, fmt.Errorf("failed to create mon_group %s: %w", monGroupDir, err)
 		}
 	} else {
-		log.Info("created mon_group", "key", key, "dir", monGroupDir)
+		log().Info("created mon_group", "key", key, "dir", monGroupDir)
 	}
 
 	m.entries[key] = &entry{
@@ -285,9 +299,9 @@ func (m *Manager) AssignPID(key string, pid int) error {
 		return fmt.Errorf("invalid pid %d: must be positive", pid)
 	}
 	key = m.canonKey(key)
-	m.mu.Lock()
+	m.mu.RLock()
 	e, ok := m.entries[key]
-	m.mu.Unlock()
+	m.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("%w: %q", ErrNotTracked, key)
 	}
@@ -324,7 +338,7 @@ func (m *Manager) AssignPID(key string, pid int) error {
 	if _, err := f.Write(data); err != nil {
 		return fmt.Errorf("failed to write pid %d for key %s: %w", pid, key, err)
 	}
-	log.Info("assigned PID to mon_group", "key", key, "pid", pid)
+	log().Info("assigned PID to mon_group", "key", key, "pid", pid)
 	return nil
 }
 
@@ -429,7 +443,7 @@ func (m *Manager) Remove(key string) error {
 	}
 
 	delete(m.entries, key)
-	log.Info("removed mon_group", "key", key, "dir", e.dir)
+	log().Info("removed mon_group", "key", key, "dir", e.dir)
 	return nil
 }
 
@@ -505,7 +519,7 @@ func (m *Manager) reconcileDir(monGroupsPath string, liveSet map[string]struct{}
 			// with no monitoring groups) and not an error.
 			return nil
 		}
-		log.Warn("reconcile: failed to read mon_groups dir", "path", monGroupsPath, "err", err)
+		log().Warn("reconcile: failed to read mon_groups dir", "path", monGroupsPath, "err", err)
 		return fmt.Errorf("reconcile: failed to read mon_groups dir %s: %w", monGroupsPath, err)
 	}
 
@@ -537,9 +551,9 @@ func (m *Manager) reconcileDir(monGroupsPath string, liveSet map[string]struct{}
 		// Three-way decision using tasks-exclusivity: a PID can only reside
 		// in one mon_group at a time, so the Manager's tracked entry path is
 		// definitively authoritative and any duplicate elsewhere is stale.
-		m.mu.Lock()
+		m.mu.RLock()
 		e, tracked := m.entries[canon]
-		m.mu.Unlock()
+		m.mu.RUnlock()
 
 		switch {
 		case tracked && e.dir == orphanDir:
@@ -570,20 +584,20 @@ func (m *Manager) reconcileDir(monGroupsPath string, liveSet map[string]struct{}
 		}
 		if err := m.rmdir(orphanDir); err != nil && !errors.Is(err, os.ErrNotExist) {
 			m.mu.Unlock()
-			log.Warn("reconcile: failed to remove orphan", "dir", orphanDir, "err", err)
+			log().Warn("reconcile: failed to remove orphan", "dir", orphanDir, "err", err)
 			errs = append(errs, fmt.Errorf("reconcile: failed to remove orphan %s: %w", orphanDir, err))
 			continue
 		}
 		m.mu.Unlock()
-		log.Info("reconcile: removed orphan mon_group", "key", name, "dir", orphanDir)
+		log().Info("reconcile: removed orphan mon_group", "key", name, "dir", orphanDir)
 	}
 	return errors.Join(errs...)
 }
 
 // List returns the keys currently tracked in memory.
 func (m *Manager) List() []string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	keys := make([]string, 0, len(m.entries))
 	for k := range m.entries {
 		keys = append(keys, k)
@@ -594,8 +608,8 @@ func (m *Manager) List() []string {
 // Snapshot returns a point-in-time map of tracked key -> *Group handle. The
 // returned Group values are copies safe to use after the lock is released.
 func (m *Manager) Snapshot() map[string]*Group {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	out := make(map[string]*Group, len(m.entries))
 	for k, e := range m.entries {
 		out[k] = &Group{key: k, dir: e.dir, class: e.rdtClass}

@@ -21,6 +21,8 @@ package monitor
 import (
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -44,6 +46,37 @@ func TestNew_Defaults(t *testing.T) {
 
 	// Default validator should accept a simple key.
 	assert.True(t, mgr.validKey("my-pod-uid"))
+}
+
+func TestSetLogger_ConcurrentWithOps(t *testing.T) {
+	// Regression test for the package-logger data race: SetLogger must be safe
+	// to call concurrently with Manager operations that read the logger.
+	// Meaningful under `go test -race`.
+	tmpDir := t.TempDir()
+	mgr, err := New(Options{ResctrlRoot: tmpDir})
+	require.NoError(t, err)
+	t.Cleanup(func() { SetLogger(nil) })
+
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			SetLogger(quiet)
+			SetLogger(nil)
+		}()
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			key := fmt.Sprintf("pod-%d", n)
+			_, _ = mgr.EnsureGroup(key, "")
+			_ = mgr.List()
+			_ = mgr.Snapshot()
+		}(i)
+	}
+	wg.Wait()
 }
 
 func TestNew_ExplicitRoot(t *testing.T) {

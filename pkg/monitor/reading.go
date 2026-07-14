@@ -83,9 +83,9 @@ var readingMeta = map[string]struct {
 func (m *Manager) ReadCounters(key string) ([]Reading, error) {
 	key = m.canonKey(key)
 
-	m.mu.Lock()
+	m.mu.RLock()
 	e, ok := m.entries[key]
-	m.mu.Unlock()
+	m.mu.RUnlock()
 	if !ok {
 		return nil, ErrNotTracked
 	}

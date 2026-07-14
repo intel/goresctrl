@@ -266,7 +266,7 @@ func (o *otelObserver) observe(ctx context.Context, obs metric.Observer) {
 			instr := o.instrs[instrName]
 			o.mu.Unlock()
 			if instr == nil {
-				log.Warn("otel: unknown counter skipped (not discovered at registration)",
+				log().Warn("otel: unknown counter skipped (not discovered at registration)",
 					"instrument", instrName, "domain", r.Domain, "counter", r.Name)
 				continue
 			}
