@@ -1,3 +1,5 @@
+//go:build linux
+
 /*
 Copyright 2026 Intel Corporation
 
@@ -52,10 +54,12 @@ var readingMeta = map[string]struct {
 	kind ReadingKind
 	unit string
 }{
-	"llc_occupancy":        {Gauge, "By"},
-	"mbm_total_bytes":      {Cumulative, "By"},
-	"mbm_local_bytes":      {Cumulative, "By"},
-	"core_energy":          {Cumulative, "J"},
+	"llc_occupancy":   {Gauge, "By"},
+	"mbm_total_bytes": {Cumulative, "By"},
+	"mbm_local_bytes": {Cumulative, "By"},
+	"core_energy":     {Cumulative, "J"},
+	// activity accumulates dynamic capacitance; its rate of change is the
+	// workload's dynamic capacitance (Cdyn)
 	"activity":             {Cumulative, "farads"},
 	"c1_res":               {Cumulative, ""},
 	"c6_res":               {Cumulative, ""},

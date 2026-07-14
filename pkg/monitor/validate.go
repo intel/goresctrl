@@ -1,3 +1,5 @@
+//go:build linux
+
 /*
 Copyright 2026 Intel Corporation
 
@@ -96,7 +98,11 @@ func CanonicalizePodUID(key string) string {
 }
 
 // isHex reports whether s consists solely of hexadecimal digits (either case).
+// An empty string is not considered hex.
 func isHex(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
 	for _, c := range s {
 		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
 			return false

@@ -1,3 +1,5 @@
+//go:build linux
+
 /*
 Copyright 2026 Intel Corporation
 
@@ -37,6 +39,7 @@ func TestNew_Defaults(t *testing.T) {
 	assert.NotNil(t, mgr.validKey)
 	assert.NotNil(t, mgr.entries)
 	assert.NotNil(t, mgr.mkdir)
+	assert.NotNil(t, mgr.mkdirAll)
 	assert.NotNil(t, mgr.rmdir)
 
 	// Default validator should accept a simple key.
@@ -262,6 +265,21 @@ func TestEnsureGroup_ENOSPC(t *testing.T) {
 	_, err = mgr.EnsureGroup("pod-uid-1", "")
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, ErrNoRMIDs))
+}
+
+func TestEnsureGroup_MkdirAllError(t *testing.T) {
+	tmpDir := t.TempDir()
+	mgr, err := New(Options{ResctrlRoot: tmpDir})
+	require.NoError(t, err)
+
+	// Inject a mkdirAll that fails when creating the mon_groups/ parent dir.
+	injected := errors.New("injected mkdirAll failure")
+	mgr.mkdirAll = func(name string, perm os.FileMode) error {
+		return injected
+	}
+
+	_, err = mgr.EnsureGroup("pod-uid-1", "")
+	assert.ErrorIs(t, err, injected)
 }
 
 func TestEnsureGroup_AdoptsExistingDir(t *testing.T) {
