@@ -657,6 +657,33 @@ func TestReconcile_ReapsStaleDuplicate(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "stale duplicate must be reaped")
 }
 
+func TestReconcile_AggregatesRemovalErrors(t *testing.T) {
+	// Two orphans; rmdir fails for both. Reconcile must attempt every one and
+	// return an aggregated error naming each failure, rather than stopping at
+	// the first or silently swallowing them.
+	tmpDir := t.TempDir()
+	setupReconcileTree(t, tmpDir, map[string][]string{
+		".": {"dead-a", "dead-b"},
+	})
+
+	mgr, err := New(Options{ResctrlRoot: tmpDir})
+	require.NoError(t, err)
+
+	var attempted []string
+	mgr.rmdir = func(name string) error {
+		attempted = append(attempted, name)
+		return errors.New("injected rmdir failure")
+	}
+
+	err = mgr.Reconcile(nil)
+	require.Error(t, err)
+	// Best-effort: both orphans were attempted despite the first failing.
+	assert.Len(t, attempted, 2)
+	// Observable: the aggregated error references both failing directories.
+	assert.Contains(t, err.Error(), "dead-a")
+	assert.Contains(t, err.Error(), "dead-b")
+}
+
 // --- Security tests ---
 
 func TestEnsureGroup_CanonicalizedKeyPathTraversal(t *testing.T) {

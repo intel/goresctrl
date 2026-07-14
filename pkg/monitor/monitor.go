@@ -446,19 +446,27 @@ func (m *Manager) Remove(key string) error {
 // same key were to appear under multiple ctrl_groups due to misconfiguration,
 // only the in-memory tracked instance is authoritative; duplicates under other
 // ctrl_groups are treated as orphans and removed.
+//
+// Reconcile is best-effort but observable: it continues past per-directory
+// failures (unreadable mon_groups/ directories, failed removals) rather than
+// aborting, and returns all such failures aggregated with errors.Join. A nil
+// return means every eligible orphan was reaped successfully.
 func (m *Manager) Reconcile(live []string) error {
 	liveSet := make(map[string]struct{}, len(live))
 	for _, k := range live {
 		liveSet[m.canonKey(k)] = struct{}{}
 	}
 
+	var errs []error
+
 	// Scan root-level mon_groups.
-	m.reconcileDir(filepath.Join(m.root, monGroupsDir), liveSet)
+	errs = append(errs, m.reconcileDir(filepath.Join(m.root, monGroupsDir), liveSet))
 
 	// Scan ctrl_group-level mon_groups.
 	entries, err := os.ReadDir(m.root)
 	if err != nil {
-		return fmt.Errorf("reconcile: failed to read resctrl root %s: %w", m.root, err)
+		errs = append(errs, fmt.Errorf("reconcile: failed to read resctrl root %s: %w", m.root, err))
+		return errors.Join(errs...)
 	}
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -471,9 +479,9 @@ func (m *Manager) Reconcile(live []string) error {
 		if name == monGroupsDir || name == "mon_data" || name == "info" {
 			continue
 		}
-		m.reconcileDir(filepath.Join(m.root, name, monGroupsDir), liveSet)
+		errs = append(errs, m.reconcileDir(filepath.Join(m.root, name, monGroupsDir), liveSet))
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // reconcileDir scans a single mon_groups/ directory and removes orphan or
@@ -485,14 +493,23 @@ func (m *Manager) Reconcile(live []string) error {
 //
 // Directories whose key appears in liveSet but is NOT tracked by this Manager
 // are assumed to be owned by external tooling and are left untouched.
-func (m *Manager) reconcileDir(monGroupsPath string, liveSet map[string]struct{}) {
+//
+// It is best-effort: a missing mon_groups/ directory is not an error, but an
+// unreadable directory or a failed removal is logged and returned (aggregated
+// with errors.Join) so the caller can observe partial failures.
+func (m *Manager) reconcileDir(monGroupsPath string, liveSet map[string]struct{}) error {
 	entries, err := os.ReadDir(monGroupsPath)
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			log.Warn("reconcile: failed to read mon_groups dir", "path", monGroupsPath, "err", err)
+		if errors.Is(err, os.ErrNotExist) {
+			// A missing mon_groups/ directory is normal (e.g. a ctrl_group
+			// with no monitoring groups) and not an error.
+			return nil
 		}
-		return
+		log.Warn("reconcile: failed to read mon_groups dir", "path", monGroupsPath, "err", err)
+		return fmt.Errorf("reconcile: failed to read mon_groups dir %s: %w", monGroupsPath, err)
 	}
+
+	var errs []error
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -554,11 +571,13 @@ func (m *Manager) reconcileDir(monGroupsPath string, liveSet map[string]struct{}
 		if err := m.rmdir(orphanDir); err != nil && !errors.Is(err, os.ErrNotExist) {
 			m.mu.Unlock()
 			log.Warn("reconcile: failed to remove orphan", "dir", orphanDir, "err", err)
+			errs = append(errs, fmt.Errorf("reconcile: failed to remove orphan %s: %w", orphanDir, err))
 			continue
 		}
 		m.mu.Unlock()
 		log.Info("reconcile: removed orphan mon_group", "key", name, "dir", orphanDir)
 	}
+	return errors.Join(errs...)
 }
 
 // List returns the keys currently tracked in memory.
