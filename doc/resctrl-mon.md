@@ -36,7 +36,7 @@ different models:
   (`CreateMonGroup`, `GetMonData`, `NewCollector`) is coupled to the
   `Initialize` + `SetConfig` lifecycle and scoped to the L3 resource.
 - Use **`pkg/monitor`** for standalone per-workload `mon_group` lifecycle
-  management decoupled from allocation: no `Initialize`/`Config`, placement
+  management decoupled from allocation: no `Initialize`/`SetConfig`, placement
   under any (optionally `pkg/rdt`-managed) ctrl_group, typed counter readings
   (gauge vs cumulative, with units) across all `mon_data` domains — including
   Intel AET energy and PERF_PKG counters — key validation/canonicalization,

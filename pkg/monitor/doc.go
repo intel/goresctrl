@@ -37,7 +37,7 @@ limitations under the License.
 //     Initialize + SetConfig lifecycle and is scoped to the L3 resource.
 //
 //   - Use pkg/monitor when you need standalone per-workload mon_group lifecycle
-//     management decoupled from allocation: no Initialize/Config required, group
+//     management decoupled from allocation: no Initialize/SetConfig required, group
 //     placement under any (optionally pkg/rdt-managed) ctrl_group, typed counter
 //     readings (gauge vs cumulative, with units) across all mon_data domains
 //     including Intel AET energy and PERF_PKG counters, key validation and
