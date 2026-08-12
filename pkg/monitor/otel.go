@@ -60,9 +60,38 @@ func WithFilter(fn FilterFunc) OTelOption {
 	return func(c *otelConfig) { c.filter = fn }
 }
 
-// Registration is a placeholder return type for RegisterOTelInstruments.
-// It currently carries no state; future versions may add deregistration support.
-type Registration struct{}
+// Registration is the handle returned by RegisterOTelInstruments. It owns the
+// OTel batch callback registered with the caller's Meter. Callers should call
+// Unregister (or the io.Closer-compatible Close) during shutdown to stop
+// further observations and release the callback's reference to the Manager;
+// leaking it keeps the Manager reachable for the lifetime of the MeterProvider.
+type Registration struct {
+	reg  metric.Registration
+	once sync.Once
+	err  error
+}
+
+// Unregister removes the batch callback from the Meter, stopping further
+// observations and releasing the callback's reference to the Manager. It is
+// idempotent and safe to call on a nil *Registration; the first call performs
+// the unregister and subsequent calls return the same result.
+func (r *Registration) Unregister() error {
+	if r == nil {
+		return nil
+	}
+	r.once.Do(func() {
+		if r.reg != nil {
+			r.err = r.reg.Unregister()
+		}
+	})
+	return r.err
+}
+
+// Close implements io.Closer by unregistering the callback, so callers can use
+// defer reg.Close(). It is equivalent to Unregister.
+func (r *Registration) Close() error {
+	return r.Unregister()
+}
 
 // RegisterOTelInstruments registers observable OTel instruments for all
 // counters readable by the Manager. A batch callback is registered with the
@@ -110,7 +139,9 @@ type Registration struct{}
 // aggregation races in the kernel.
 //
 // The caller owns the Meter and MeterProvider lifecycle (endpoint, push
-// interval, shutdown).
+// interval, shutdown). Call Unregister (or Close) on the returned Registration
+// during shutdown to remove the batch callback and release its reference to
+// the Manager.
 func (m *Manager) RegisterOTelInstruments(meter metric.Meter, opts ...OTelOption) (*Registration, error) {
 	cfg := &otelConfig{}
 	for _, o := range opts {
@@ -131,7 +162,7 @@ func (m *Manager) RegisterOTelInstruments(meter metric.Meter, opts ...OTelOption
 		return nil, err
 	}
 
-	return &Registration{}, nil
+	return &Registration{reg: obs.reg}, nil
 }
 
 // otelObserver holds state for the OTel batch callback.
@@ -143,6 +174,7 @@ type otelObserver struct {
 	mu     sync.Mutex
 	instrs map[string]metric.Observable // instrName → instrument
 	accum  *otelAccumulator
+	reg    metric.Registration // batch callback registration; nil if none
 }
 
 // discoverAndRegister scans root/mon_data to find available (domain, counter)
@@ -178,14 +210,18 @@ func (o *otelObserver) discoverAndRegister() error {
 		return nil
 	}
 
-	_, err = o.meter.RegisterCallback(
+	reg, err := o.meter.RegisterCallback(
 		func(ctx context.Context, obs metric.Observer) error {
 			o.observe(ctx, obs)
 			return nil
 		},
 		observables...,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	o.reg = reg
+	return nil
 }
 
 // counterEntry is a (domain, counter) pair discovered by walking directory entries.

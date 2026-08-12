@@ -61,20 +61,16 @@ func TestSetLogger_ConcurrentWithOps(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			SetLogger(quiet)
 			SetLogger(nil)
-		}()
-		wg.Add(1)
-		go func(n int) {
-			defer wg.Done()
-			key := fmt.Sprintf("pod-%d", n)
+		})
+		wg.Go(func() {
+			key := fmt.Sprintf("pod-%d", i)
 			_, _ = mgr.EnsureGroup(key, "")
 			_ = mgr.List()
 			_ = mgr.Snapshot()
-		}(i)
+		})
 	}
 	wg.Wait()
 }
@@ -801,16 +797,13 @@ func TestRemove_ConcurrentEnsureGroup(t *testing.T) {
 		require.NoError(t, err)
 
 		var wg sync.WaitGroup
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			mgr.Remove("pod-uid-1")
-		}()
+		})
 		var ensureErr error
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, ensureErr = mgr.EnsureGroup("pod-uid-1", "")
-		}()
+		})
 		wg.Wait()
 
 		// If EnsureGroup succeeded and the key is tracked, the directory it

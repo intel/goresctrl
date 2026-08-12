@@ -189,6 +189,39 @@ func TestRegisterOTelInstruments_WithCounters(t *testing.T) {
 	require.NotNil(t, reg)
 }
 
+func TestRegistration_Unregister(t *testing.T) {
+	dir := t.TempDir()
+	l3Dir := dir + "/mon_data/mon_L3_00"
+	require.NoError(t, os.MkdirAll(l3Dir, 0755))
+	require.NoError(t, os.WriteFile(l3Dir+"/llc_occupancy", []byte("1024\n"), 0644))
+
+	mgr, err := New(Options{ResctrlRoot: dir})
+	require.NoError(t, err)
+
+	meter := noop.Meter{}
+	reg, err := mgr.RegisterOTelInstruments(meter)
+	require.NoError(t, err)
+	require.NotNil(t, reg)
+
+	// Unregister is idempotent and Close is an alias for it.
+	assert.NoError(t, reg.Unregister())
+	assert.NoError(t, reg.Unregister())
+	assert.NoError(t, reg.Close())
+
+	// A Registration with no callback (no mon_data, so nothing registered)
+	// unregisters cleanly.
+	emptyMgr, err := New(Options{ResctrlRoot: t.TempDir()})
+	require.NoError(t, err)
+	noReg, err := emptyMgr.RegisterOTelInstruments(meter)
+	require.NoError(t, err)
+	assert.NoError(t, noReg.Unregister())
+
+	// A nil *Registration is safe to unregister.
+	var nilReg *Registration
+	assert.NoError(t, nilReg.Unregister())
+	assert.NoError(t, nilReg.Close())
+}
+
 func TestRegisterOTelInstruments_UnavailableCounterDiscovered(t *testing.T) {
 	dir := t.TempDir()
 	l3Dir := dir + "/mon_data/mon_L3_00"
