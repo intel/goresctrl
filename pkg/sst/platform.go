@@ -18,10 +18,8 @@ package sst
 
 import (
 	"fmt"
-	"os"
 	"slices"
 
-	"github.com/intel/goresctrl/pkg/sst/internal/isst"
 	"github.com/intel/goresctrl/pkg/utils"
 )
 
@@ -29,21 +27,6 @@ import (
 type Platform struct {
 	backend
 	packages map[int]*cpuPackageInfo
-}
-
-// SstSupported returns true if Intel Speed Select Technologies (SST) is
-// supported by the system and can be interfaced via the Linux kernel device.
-func SstSupported() bool {
-	devPath := isst.DevPath()
-	if _, err := os.Stat(devPath); err != nil {
-		if !os.IsNotExist(err) {
-			sstlog.Error("failed to access sst device", "path", devPath, "error", err)
-		} else {
-			sstlog.Debug("sst device does not exist", "path", devPath)
-		}
-		return false
-	}
-	return true
 }
 
 // Init initializes SST and returns a handle. The handle stores a snapshot of
