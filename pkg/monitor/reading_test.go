@@ -186,3 +186,14 @@ func TestSnapshot_Empty(t *testing.T) {
 	snap := mgr.Snapshot()
 	assert.Empty(t, snap)
 }
+
+func TestMetaKind_UnknownDefaultsToGauge(t *testing.T) {
+	// Known cumulative counters stay Cumulative.
+	assert.Equal(t, Cumulative, metaKind("core_energy"))
+	assert.Equal(t, Cumulative, metaKind("mbm_total_bytes"))
+	// Known gauge stays Gauge.
+	assert.Equal(t, Gauge, metaKind("llc_occupancy"))
+	// Unknown/future counters default to Gauge so they bypass the monotonic
+	// accumulator rather than risk corrupting a real gauge.
+	assert.Equal(t, Gauge, metaKind("some_future_counter"))
+}

@@ -146,12 +146,14 @@ func readMonData(monDataPath string) ([]Reading, error) {
 	return out, nil
 }
 
-// metaKind returns the ReadingKind for a known counter name, defaulting to Cumulative.
+// metaKind returns the ReadingKind for a known counter name. Unknown counters
+// default to Gauge: mislabeling a real counter as a gauge still rate()s fine,
+// whereas feeding a real gauge through the monotonic accumulator corrupts it.
 func metaKind(name string) ReadingKind {
 	if m, ok := readingMeta[name]; ok {
 		return m.kind
 	}
-	return Cumulative
+	return Gauge
 }
 
 // metaUnit returns the unit hint for a known counter name, or "" if unknown.
