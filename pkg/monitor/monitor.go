@@ -112,6 +112,11 @@ type Options struct {
 	// PodUIDValidator) so that keys reported in different-but-equivalent forms
 	// (e.g. a pod UID with or without dashes) map to a single, predictable
 	// on-disk directory name.
+	//
+	// It must be idempotent: canonicalizing an already-canonical key returns it
+	// unchanged (canon(canon(k)) == canon(k)). The bundled CanonicalizePodUID
+	// satisfies this; internal callers pass already-canonical keys and rely on
+	// it to avoid re-normalizing.
 	KeyCanonicalizer func(key string) string
 }
 
@@ -439,6 +444,13 @@ func warnIfTasksPresent(dir string) {
 	}
 }
 
+// dirHasTasksFile reports whether dir contains a resctrl tasks file, i.e. it is
+// a real mon_group rather than kernel-managed metadata (info, mon_data, ...).
+func dirHasTasksFile(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, tasksFile))
+	return err == nil
+}
+
 // Remove deletes the mon_group for key (kernel releases the RMID) and drops
 // all in-memory state for that key. Removing a directory that is already gone
 // on disk is not an error, but calling Remove for a key that is not tracked
@@ -576,6 +588,12 @@ func (m *Manager) reconcileDir(monGroupsPath string, liveSet map[string]struct{}
 		canon := m.canonKey(name)
 		orphanDir := filepath.Join(monGroupsPath, name)
 
+		// Positively identify a mon_group by the presence of its tasks file so a
+		// future kernel-managed directory under mon_groups/ is not mistaken for a
+		// reap-able group even if it slips past the name checks above.
+		if !dirHasTasksFile(orphanDir) {
+			continue
+		}
 		// Three-way decision using tasks-exclusivity: a PID can only reside
 		// in one mon_group at a time, so the Manager's tracked entry path is
 		// definitively authoritative and any duplicate elsewhere is stale.

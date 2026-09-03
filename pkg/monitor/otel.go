@@ -286,7 +286,7 @@ func (o *otelObserver) createInstrument(name string, kind ReadingKind, unit stri
 func (o *otelObserver) observe(ctx context.Context, obs metric.Observer) {
 	groups := o.mgr.Snapshot()
 	for key, g := range groups {
-		readings, err := o.mgr.ReadCounters(key)
+		readings, err := o.mgr.readCountersCanon(key)
 		if err != nil {
 			log().Debug("otel: skipping group; ReadCounters failed", "key", key, "err", err)
 			continue

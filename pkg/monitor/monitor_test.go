@@ -25,6 +25,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -598,6 +599,31 @@ func TestRemove_UntrackedKey(t *testing.T) {
 	assert.True(t, errors.Is(err, ErrNotTracked))
 }
 
+func TestReadCounters_CanonicalizesKeyOnce(t *testing.T) {
+	tmpDir := t.TempDir()
+	mgr, err := New(Options{
+		ResctrlRoot:      tmpDir,
+		KeyValidator:     func(k string) bool { return k != "" },
+		KeyCanonicalizer: strings.ToLower,
+	})
+	require.NoError(t, err)
+
+	_, err = mgr.EnsureGroup("POD-ABC", "")
+	require.NoError(t, err)
+
+	// Public API accepts a non-canonical (upper-case) key and canonicalizes it.
+	_, err = mgr.ReadCounters("POD-ABC")
+	require.NoError(t, err)
+
+	// Internal path requires an already-canonical key; the canonical form works.
+	_, err = mgr.readCountersCanon("pod-abc")
+	require.NoError(t, err)
+
+	// The internal path does NOT canonicalize: a non-canonical key misses.
+	_, err = mgr.readCountersCanon("POD-ABC")
+	assert.ErrorIs(t, err, ErrNotTracked)
+}
+
 // --- Reconcile tests (Task 3.1) ---
 
 // helper: create a fake resctrl tree with mon_groups directories.
@@ -612,9 +638,20 @@ func setupReconcileTree(t *testing.T, root string, dirs map[string][]string) {
 		}
 		require.NoError(t, os.MkdirAll(monDir, 0755))
 		for _, g := range groups {
-			require.NoError(t, os.Mkdir(filepath.Join(monDir, g), 0755))
+			groupDir := filepath.Join(monDir, g)
+			require.NoError(t, os.Mkdir(groupDir, 0755))
+			// Real mon_groups always expose a tasks file; the fixtures must too so
+			// reconcile can positively identify them.
+			require.NoError(t, os.WriteFile(filepath.Join(groupDir, "tasks"), nil, 0644))
 		}
 	}
+}
+
+// reapEmulatesResctrl makes mgr.rmdir remove a mon_group even though its fixture
+// tasks file makes it non-empty on a real filesystem; the resctrl kernel removes
+// such a group with a single rmdir, which a plain tmpfs does not.
+func reapEmulatesResctrl(mgr *Manager) {
+	mgr.rmdir = os.RemoveAll
 }
 
 func TestReconcile_ReapsOwnOrphan(t *testing.T) {
@@ -625,6 +662,7 @@ func TestReconcile_ReapsOwnOrphan(t *testing.T) {
 
 	mgr, err := New(Options{ResctrlRoot: tmpDir})
 	require.NoError(t, err)
+	reapEmulatesResctrl(mgr)
 
 	err = mgr.Reconcile(nil)
 	require.NoError(t, err)
@@ -641,6 +679,7 @@ func TestReconcile_KeepsLiveKey(t *testing.T) {
 
 	mgr, err := New(Options{ResctrlRoot: tmpDir})
 	require.NoError(t, err)
+	reapEmulatesResctrl(mgr)
 
 	err = mgr.Reconcile([]string{"live-pod"})
 	require.NoError(t, err)
@@ -661,6 +700,7 @@ func TestReconcile_KeyValidatorScopesReaping(t *testing.T) {
 	// PodUIDValidator scopes reaping to UUID-shaped directories only.
 	mgr, err := New(Options{ResctrlRoot: tmpDir, KeyValidator: PodUIDValidator})
 	require.NoError(t, err)
+	reapEmulatesResctrl(mgr)
 
 	err = mgr.Reconcile(nil)
 	require.NoError(t, err)
@@ -671,6 +711,24 @@ func TestReconcile_KeyValidatorScopesReaping(t *testing.T) {
 	// UUID-shaped orphan is reaped.
 	_, err = os.Stat(filepath.Join(tmpDir, "mon_groups", validUUID))
 	assert.True(t, os.IsNotExist(err))
+}
+
+func TestReconcile_SkipsDirWithoutTasksFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	monDir := filepath.Join(tmpDir, "mon_groups")
+	require.NoError(t, os.MkdirAll(monDir, 0755))
+	// A future kernel-managed directory (no tasks file) whose name happens to
+	// pass the key checks must not be mistaken for a mon_group and reaped.
+	require.NoError(t, os.Mkdir(filepath.Join(monDir, "meta-dir"), 0755))
+
+	mgr, err := New(Options{ResctrlRoot: tmpDir})
+	require.NoError(t, err)
+
+	err = mgr.Reconcile(nil)
+	require.NoError(t, err)
+
+	_, err = os.Stat(filepath.Join(monDir, "meta-dir"))
+	assert.NoError(t, err, "dir without a tasks file must not be reaped")
 }
 
 func TestReconcile_IgnoresNonKeyDirs(t *testing.T) {
@@ -699,6 +757,7 @@ func TestReconcile_CtrlGroupLevel(t *testing.T) {
 
 	mgr, err := New(Options{ResctrlRoot: tmpDir})
 	require.NoError(t, err)
+	reapEmulatesResctrl(mgr)
 
 	err = mgr.Reconcile([]string{"alive"})
 	require.NoError(t, err)
@@ -733,9 +792,11 @@ func TestReconcile_ReapsStaleDuplicate(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "BestEffort", "mon_groups"), 0755))
 	// Also create root-level mon_groups with the stale duplicate.
 	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "mon_groups", "pod-uid-1"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "mon_groups", "pod-uid-1", "tasks"), nil, 0644))
 
 	mgr, err := New(Options{ResctrlRoot: tmpDir})
 	require.NoError(t, err)
+	reapEmulatesResctrl(mgr)
 
 	// Track the key under BestEffort — this is the authoritative location.
 	_, err = mgr.EnsureGroup("pod-uid-1", "BestEffort")

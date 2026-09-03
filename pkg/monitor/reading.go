@@ -79,10 +79,16 @@ var readingMeta = map[string]struct {
 // ReadCounters walks <group>/mon_data/<domain>/* for the tracked key and
 // returns every readable counter file. Missing files/dirs are skipped, not
 // errors: not every domain exposes every counter. Returns ErrNotTracked if the
-// key is unknown.
+// key is unknown. The caller key is canonicalized once here.
 func (m *Manager) ReadCounters(key string) ([]Reading, error) {
-	key = m.canonKey(key)
+	return m.readCountersCanon(m.canonKey(key))
+}
 
+// readCountersCanon reads counters for an already-canonicalized key. Internal
+// callers (e.g. the OTel observe loop, which iterates Snapshot keys that are
+// already canonical) use this to avoid re-applying the canonicalizer, relying
+// on KeyCanonicalizer being idempotent.
+func (m *Manager) readCountersCanon(key string) ([]Reading, error) {
 	m.mu.RLock()
 	e, ok := m.entries[key]
 	m.mu.RUnlock()
