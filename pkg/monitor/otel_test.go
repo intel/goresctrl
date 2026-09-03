@@ -89,30 +89,33 @@ func TestOTelAccumulator_Monotonic(t *testing.T) {
 	a := newOTelAccumulator()
 
 	// First value initializes.
-	v := a.monotonic("pod1", "mon_L3_00", "mbm_total_bytes", 100)
+	v := a.monotonic("pod1", "mon_L3_00", "mbm_total_bytes", 100, 1)
 	assert.Equal(t, 100.0, v)
 
 	// Positive delta accumulates.
-	v = a.monotonic("pod1", "mon_L3_00", "mbm_total_bytes", 150)
+	v = a.monotonic("pod1", "mon_L3_00", "mbm_total_bytes", 150, 1)
 	assert.Equal(t, 150.0, v)
 
 	// Negative delta (hardware race) is suppressed.
-	v = a.monotonic("pod1", "mon_L3_00", "mbm_total_bytes", 148)
+	v = a.monotonic("pod1", "mon_L3_00", "mbm_total_bytes", 148, 1)
 	assert.Equal(t, 150.0, v) // unchanged
 
 	// Recovery after negative: only the positive delta from 148→200 counts.
-	v = a.monotonic("pod1", "mon_L3_00", "mbm_total_bytes", 200)
+	v = a.monotonic("pod1", "mon_L3_00", "mbm_total_bytes", 200, 1)
 	assert.Equal(t, 202.0, v) // 150 + (200-148)
 }
 
 func TestOTelAccumulator_PruneStaleGroups(t *testing.T) {
 	a := newOTelAccumulator()
 
-	a.monotonic("pod1", "mon_L3_00", "llc_occupancy", 42)
-	a.monotonic("pod2", "mon_L3_00", "llc_occupancy", 99)
+	a.monotonic("pod1", "mon_L3_00", "llc_occupancy", 42, 1)
+	a.monotonic("pod2", "mon_L3_00", "llc_occupancy", 99, 1)
 
-	// Prune with only pod1 live — pod2 state should be removed.
-	a.pruneStaleGroups(map[string]struct{}{"pod1": {}})
+	// pod2 must remain absent for pruneGraceCycles consecutive collections
+	// before its state is discarded; pod1 stays live throughout.
+	for i := 0; i < pruneGraceCycles; i++ {
+		a.pruneStaleGroups(map[string]struct{}{"pod1": {}})
+	}
 
 	a.mu.Lock()
 	_, hasPod1 := a.state["pod1\x00mon_L3_00\x00llc_occupancy"]
@@ -126,7 +129,7 @@ func TestOTelAccumulator_FilteredCounterRetainsState(t *testing.T) {
 	a := newOTelAccumulator()
 
 	// Accumulate a value.
-	v := a.monotonic("pod1", "mon_PERF_PKG_00", "core_energy", 100)
+	v := a.monotonic("pod1", "mon_PERF_PKG_00", "core_energy", 100, 1)
 	assert.Equal(t, 100.0, v)
 
 	// Simulate a cycle where pod1 is still alive but the counter is
@@ -135,7 +138,7 @@ func TestOTelAccumulator_FilteredCounterRetainsState(t *testing.T) {
 
 	// Counter comes back — accumulated value should continue from where
 	// it left off, not reset.
-	v = a.monotonic("pod1", "mon_PERF_PKG_00", "core_energy", 150)
+	v = a.monotonic("pod1", "mon_PERF_PKG_00", "core_energy", 150, 1)
 	assert.Equal(t, 150.0, v)
 }
 
@@ -143,15 +146,68 @@ func TestOTelAccumulator_IndependentSeries(t *testing.T) {
 	a := newOTelAccumulator()
 
 	// Two different groups don't interfere.
-	v1 := a.monotonic("pod1", "mon_L3_00", "mbm_total_bytes", 100)
-	v2 := a.monotonic("pod2", "mon_L3_00", "mbm_total_bytes", 200)
+	v1 := a.monotonic("pod1", "mon_L3_00", "mbm_total_bytes", 100, 1)
+	v2 := a.monotonic("pod2", "mon_L3_00", "mbm_total_bytes", 200, 1)
 	assert.Equal(t, 100.0, v1)
 	assert.Equal(t, 200.0, v2)
 
-	v1 = a.monotonic("pod1", "mon_L3_00", "mbm_total_bytes", 120)
-	v2 = a.monotonic("pod2", "mon_L3_00", "mbm_total_bytes", 250)
+	v1 = a.monotonic("pod1", "mon_L3_00", "mbm_total_bytes", 120, 1)
+	v2 = a.monotonic("pod2", "mon_L3_00", "mbm_total_bytes", 250, 1)
 	assert.Equal(t, 120.0, v1)
 	assert.Equal(t, 250.0, v2)
+}
+
+func TestOTelAccumulator_EpochReanchor_HigherResidual(t *testing.T) {
+	a := newOTelAccumulator()
+	const grp, dom, ctr = "pod1", "mon_PERF_PKG_00", "core_energy"
+
+	assert.Equal(t, 165000.0, a.monotonic(grp, dom, ctr, 165_000, 1))
+	assert.Equal(t, 165066.0, a.monotonic(grp, dom, ctr, 165_066, 1))
+
+	// gen 2: mon_group recreated; the new RMID's residual is much higher.
+	// The epoch re-anchor must return the prior accumulated value (no spike).
+	assert.Equal(t, 165066.0, a.monotonic(grp, dom, ctr, 329_044, 2))
+
+	// Real energy then resumes from the new baseline: +66 J.
+	assert.Equal(t, 165132.0, a.monotonic(grp, dom, ctr, 329_110, 2))
+}
+
+func TestOTelAccumulator_EpochReanchor_LowerResidual(t *testing.T) {
+	a := newOTelAccumulator()
+	const grp, dom, ctr = "pod1", "mon_PERF_PKG_00", "core_energy"
+
+	assert.Equal(t, 161270.0, a.monotonic(grp, dom, ctr, 161_270, 1))
+	assert.Equal(t, 161345.0, a.monotonic(grp, dom, ctr, 161_345, 1))
+
+	// gen 2: recreated with a lower residual. Without epoch awareness the
+	// negative delta would freeze the counter; re-anchor keeps it monotonic.
+	assert.Equal(t, 161345.0, a.monotonic(grp, dom, ctr, 36_996, 2))
+
+	// Real energy then resumes from the new baseline: +79 J.
+	assert.Equal(t, 161424.0, a.monotonic(grp, dom, ctr, 37_075, 2))
+}
+
+func TestOTelAccumulator_PruneGraceWindow(t *testing.T) {
+	a := newOTelAccumulator()
+	const key = "pod1\x00mon_L3_00\x00mbm_total_bytes"
+	a.monotonic("pod1", "mon_L3_00", "mbm_total_bytes", 100, 1)
+
+	// Absent for fewer than pruneGraceCycles collections: state is retained so
+	// a fast recreate can re-anchor rather than reset.
+	for i := 0; i < pruneGraceCycles-1; i++ {
+		a.pruneStaleGroups(map[string]struct{}{})
+		a.mu.Lock()
+		_, ok := a.state[key]
+		a.mu.Unlock()
+		assert.True(t, ok, "state must survive within the grace window")
+	}
+
+	// The pruneGraceCycles-th consecutive miss discards the state.
+	a.pruneStaleGroups(map[string]struct{}{})
+	a.mu.Lock()
+	_, ok := a.state[key]
+	a.mu.Unlock()
+	assert.False(t, ok, "state must be pruned after the grace window")
 }
 
 func TestRegisterOTelInstruments_NoMonData(t *testing.T) {

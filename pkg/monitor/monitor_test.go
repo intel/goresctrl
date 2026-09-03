@@ -328,6 +328,74 @@ func TestEnsureGroup_AdoptsExistingDir(t *testing.T) {
 	assert.Equal(t, 1, len(mgr.List()))
 }
 
+func TestEnsureGroup_GenStartsAtOne(t *testing.T) {
+	tmpDir := t.TempDir()
+	mgr, err := New(Options{ResctrlRoot: tmpDir})
+	require.NoError(t, err)
+
+	grp, err := mgr.EnsureGroup("pod-uid-1", "")
+	require.NoError(t, err)
+	assert.Equal(t, uint64(1), grp.Gen())
+}
+
+func TestEnsureGroup_GenStableWhenIdempotent(t *testing.T) {
+	tmpDir := t.TempDir()
+	mgr, err := New(Options{ResctrlRoot: tmpDir})
+	require.NoError(t, err)
+
+	grp1, err := mgr.EnsureGroup("pod-uid-1", "")
+	require.NoError(t, err)
+	grp2, err := mgr.EnsureGroup("pod-uid-1", "")
+	require.NoError(t, err)
+
+	// A no-op EnsureGroup (already tracked, dir intact) must not bump the gen.
+	assert.Equal(t, grp1.Gen(), grp2.Gen())
+}
+
+func TestEnsureGroup_GenIncrementsAcrossRemove(t *testing.T) {
+	tmpDir := t.TempDir()
+	mgr, err := New(Options{ResctrlRoot: tmpDir})
+	require.NoError(t, err)
+
+	grp1, err := mgr.EnsureGroup("pod-uid-1", "")
+	require.NoError(t, err)
+	require.NoError(t, mgr.Remove("pod-uid-1"))
+
+	// Recreating the same key must yield a strictly greater generation so
+	// downstream consumers can detect the RMID reuse.
+	grp2, err := mgr.EnsureGroup("pod-uid-1", "")
+	require.NoError(t, err)
+	assert.Greater(t, grp2.Gen(), grp1.Gen())
+}
+
+func TestEnsureGroup_GenIncrementsAfterOutOfBandRemoval(t *testing.T) {
+	tmpDir := t.TempDir()
+	mgr, err := New(Options{ResctrlRoot: tmpDir})
+	require.NoError(t, err)
+
+	grp1, err := mgr.EnsureGroup("pod-uid-1", "")
+	require.NoError(t, err)
+	require.NoError(t, os.Remove(grp1.Path()))
+
+	grp2, err := mgr.EnsureGroup("pod-uid-1", "")
+	require.NoError(t, err)
+	assert.Greater(t, grp2.Gen(), grp1.Gen())
+}
+
+func TestEnsureGroup_GenOnAdopt(t *testing.T) {
+	tmpDir := t.TempDir()
+	monGroupsPath := filepath.Join(tmpDir, "mon_groups")
+	require.NoError(t, os.MkdirAll(filepath.Join(monGroupsPath, "pod-uid-1"), 0755))
+
+	mgr, err := New(Options{ResctrlRoot: tmpDir})
+	require.NoError(t, err)
+
+	// Adopting an existing on-disk dir still assigns a generation.
+	grp, err := mgr.EnsureGroup("pod-uid-1", "")
+	require.NoError(t, err)
+	assert.Equal(t, uint64(1), grp.Gen())
+}
+
 // --- AssignPID tests (Task 2.3) ---
 
 func TestAssignPID(t *testing.T) {

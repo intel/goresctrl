@@ -125,6 +125,7 @@ type Manager struct {
 
 	mu      sync.RWMutex
 	entries map[string]*entry // keyed by canonicalized key (e.g. dashed pod UID)
+	nextGen uint64            // monotonic; assigned to each (re)created group so a key's successive incarnations differ
 
 	// Injectable filesystem operations for unit tests.
 	mkdir    func(string, os.FileMode) error
@@ -136,6 +137,7 @@ type Manager struct {
 type entry struct {
 	dir      string // absolute mon_group directory path
 	rdtClass string // rdtClass used when group was created
+	gen      uint64 // bumped each time this key's mon_group is (re)created
 }
 
 // Group is a handle to one mon_group on the resctrl filesystem.
@@ -143,6 +145,7 @@ type Group struct {
 	key   string
 	dir   string
 	class string
+	gen   uint64
 }
 
 // Key returns the canonicalized tracking key (e.g. dashed pod UID) for this group.
@@ -154,6 +157,11 @@ func (g *Group) Path() string { return g.dir }
 // Class returns the rdtClass (ctrl_group) the mon_group lives under. An empty
 // string means the mon_group is under the root resctrl group.
 func (g *Group) Class() string { return g.class }
+
+// Gen returns the group's generation, which increments each time the mon_group
+// for this key is (re)created. Consumers use it to detect RMID reuse across a
+// remove/recreate of the same key.
+func (g *Group) Gen() uint64 { return g.gen }
 
 // New creates a Manager with the given options.
 func New(o Options) (*Manager, error) {
@@ -228,7 +236,7 @@ func (m *Manager) EnsureGroup(key, rdtClass string) (*Group, error) {
 		info, err := os.Stat(e.dir)
 		switch {
 		case err == nil && info.IsDir():
-			return &Group{key: key, dir: e.dir, class: e.rdtClass}, nil
+			return &Group{key: key, dir: e.dir, class: e.rdtClass, gen: e.gen}, nil
 		case err == nil && !info.IsDir():
 			return nil, fmt.Errorf("tracked mon_group path %s exists but is not a directory", e.dir)
 		case err != nil && !errors.Is(err, os.ErrNotExist):
@@ -284,11 +292,17 @@ func (m *Manager) EnsureGroup(key, rdtClass string) (*Group, error) {
 		log().Info("created mon_group", "key", key, "dir", monGroupDir)
 	}
 
+	// Bump the monotonic generation on every (re)creation so a remove→recreate
+	// of the same key yields a strictly greater value, making RMID reuse
+	// detectable downstream.
+	m.nextGen++
+	gen := m.nextGen
 	m.entries[key] = &entry{
 		dir:      monGroupDir,
 		rdtClass: rdtClass,
+		gen:      gen,
 	}
-	return &Group{key: key, dir: monGroupDir, class: rdtClass}, nil
+	return &Group{key: key, dir: monGroupDir, class: rdtClass, gen: gen}, nil
 }
 
 // AssignPID writes pid to the group's tasks file. The kernel assigns the RMID
@@ -627,7 +641,7 @@ func (m *Manager) Snapshot() map[string]*Group {
 	defer m.mu.RUnlock()
 	out := make(map[string]*Group, len(m.entries))
 	for k, e := range m.entries {
-		out[k] = &Group{key: k, dir: e.dir, class: e.rdtClass}
+		out[k] = &Group{key: k, dir: e.dir, class: e.rdtClass, gen: e.gen}
 	}
 	return out
 }

@@ -314,7 +314,7 @@ func (o *otelObserver) observe(ctx context.Context, obs metric.Observer) {
 
 			val := r.Value
 			if r.Kind == Cumulative {
-				val = o.accum.monotonic(key, r.Domain, r.Name, val)
+				val = o.accum.monotonic(key, r.Domain, r.Name, val, g.Gen())
 			}
 
 			attrs := make([]attribute.KeyValue, 0, len(groupAttrs)+2)
@@ -402,34 +402,52 @@ func DomainInstance(domain string) string {
 
 // --- Monotonic accumulator ---
 
+// pruneGraceCycles is the number of consecutive collections a group may be
+// absent before its accumulator state is discarded. It keeps state alive across
+// a fast remove→recreate that straddles a collection cycle.
+const pruneGraceCycles = 3
+
 // otelAccumulator reconstructs monotonic cumulative sums from raw hardware
 // readings that may briefly decrease due to cross-CPU aggregation races.
 type otelAccumulator struct {
-	mu    sync.Mutex
-	state map[string]*counterState
+	mu            sync.Mutex
+	state         map[string]*counterState
+	missingCycles map[string]int // per-group count of consecutive absent collections
 }
 
 type counterState struct {
 	prevRaw     float64
 	accumulated float64
+	gen         uint64 // group generation when last updated
 }
 
 func newOTelAccumulator() *otelAccumulator {
 	return &otelAccumulator{
-		state: make(map[string]*counterState),
+		state:         make(map[string]*counterState),
+		missingCycles: make(map[string]int),
 	}
 }
 
 // monotonic accumulates a non-negative delta; negative deltas (hardware race)
 // are suppressed. Returns the monotonically-increasing accumulated value.
-func (a *otelAccumulator) monotonic(group, domain, counter string, raw float64) float64 {
+//
+// gen is the Manager generation of the group. A change in gen means the
+// mon_group was recreated (a new RMID whose residual counter value is
+// arbitrary), so the baseline is re-anchored to raw and the accumulated total
+// carried forward unchanged — contributing zero delta across the boundary.
+func (a *otelAccumulator) monotonic(group, domain, counter string, raw float64, gen uint64) float64 {
 	k := group + "\x00" + domain + "\x00" + counter
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	s, ok := a.state[k]
 	if !ok {
-		a.state[k] = &counterState{prevRaw: raw, accumulated: raw}
+		a.state[k] = &counterState{prevRaw: raw, accumulated: raw, gen: gen}
 		return raw
+	}
+	if s.gen != gen {
+		s.prevRaw = raw
+		s.gen = gen
+		return s.accumulated
 	}
 	if d := raw - s.prevRaw; d >= 0 {
 		s.accumulated += d
@@ -443,14 +461,33 @@ func (a *otelAccumulator) monotonic(group, domain, counter string, raw float64) 
 // pruneStaleGroups removes accumulator state for groups no longer in liveKeys.
 // Pruning is by group key prefix so that filtered or temporarily-unreadable
 // counters retain their accumulated values as long as the group is alive.
+//
+// Removal is deferred by pruneGraceCycles consecutive missing collections so
+// that a fast remove→recreate straddling a collection cycle retains its
+// accumulated total, which the epoch check in monotonic then re-anchors.
 func (a *otelAccumulator) pruneStaleGroups(liveKeys map[string]struct{}) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+
+	present := make(map[string]struct{})
 	for k := range a.state {
 		// Key format: group + "\x00" + domain + "\x00" + counter
-		group := k[:strings.IndexByte(k, '\x00')]
-		if _, ok := liveKeys[group]; !ok {
-			delete(a.state, k)
+		present[k[:strings.IndexByte(k, '\x00')]] = struct{}{}
+	}
+	for group := range present {
+		if _, live := liveKeys[group]; live {
+			delete(a.missingCycles, group)
+			continue
+		}
+		a.missingCycles[group]++
+		if a.missingCycles[group] < pruneGraceCycles {
+			continue // within grace window; retain for a fast recreate
+		}
+		delete(a.missingCycles, group)
+		for k := range a.state {
+			if k[:strings.IndexByte(k, '\x00')] == group {
+				delete(a.state, k)
+			}
 		}
 	}
 }
