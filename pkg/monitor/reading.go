@@ -122,6 +122,7 @@ func readMonData(monDataPath string) ([]Reading, error) {
 			}
 			v, err := strconv.ParseFloat(strings.TrimSpace(string(b)), 64)
 			if err != nil {
+				log().Debug("skipping non-numeric counter value", "domain", domain, "counter", f.Name())
 				continue // non-numeric (e.g. "Unavailable"); skip
 			}
 			out = append(out, Reading{

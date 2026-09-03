@@ -318,6 +318,10 @@ func (m *Manager) AssignPID(key string, pid int) error {
 	// error instead of corrupting the allocation. Tasks that are currently in
 	// the root group (unallocated) are allowed to be placed into the group's
 	// class, which is the normal attribution path.
+	//
+	// This check is inherently racy (TOCTOU): a concurrent reclassification
+	// between the read below and the tasks write is possible but unlikely; the
+	// kernel write is the final authority.
 	cur, err := m.controlGroupOfPID(pid)
 	if err != nil {
 		return fmt.Errorf("failed to determine current control group for pid %d (key %s): %w", pid, key, err)
@@ -412,6 +416,15 @@ func classDisplay(c string) string {
 	return c
 }
 
+// warnIfTasksPresent logs when a mon_group still has tasks at removal time.
+// Best-effort and racy: a task may enter or leave between this read and rmdir.
+func warnIfTasksPresent(dir string) {
+	b, err := os.ReadFile(filepath.Join(dir, tasksFile))
+	if err == nil && len(strings.TrimSpace(string(b))) > 0 {
+		log().Warn("removing non-empty mon_group", "dir", dir)
+	}
+}
+
 // Remove deletes the mon_group for key (kernel releases the RMID) and drops
 // all in-memory state for that key. Removing a directory that is already gone
 // on disk is not an error, but calling Remove for a key that is not tracked
@@ -436,6 +449,7 @@ func (m *Manager) Remove(key string) error {
 		return fmt.Errorf("%w: %q", ErrNotTracked, key)
 	}
 
+	warnIfTasksPresent(e.dir)
 	if err := m.rmdir(e.dir); err != nil && !errors.Is(err, os.ErrNotExist) {
 		// Leave the entry in place so the caller can retry; state stays
 		// consistent with on-disk reality.
@@ -582,6 +596,7 @@ func (m *Manager) reconcileDir(monGroupsPath string, liveSet map[string]struct{}
 			m.mu.Unlock()
 			continue
 		}
+		warnIfTasksPresent(orphanDir)
 		if err := m.rmdir(orphanDir); err != nil && !errors.Is(err, os.ErrNotExist) {
 			m.mu.Unlock()
 			log().Warn("reconcile: failed to remove orphan", "dir", orphanDir, "err", err)

@@ -65,6 +65,10 @@ func WithFilter(fn FilterFunc) OTelOption {
 // Unregister (or the io.Closer-compatible Close) during shutdown to stop
 // further observations and release the callback's reference to the Manager;
 // leaking it keeps the Manager reachable for the lifetime of the MeterProvider.
+//
+// Do not copy a Registration; use the pointer returned by
+// RegisterOTelInstruments. Copying it by value copies the embedded sync.Once
+// (go vet's copylocks flags this), defeating the idempotency of Unregister.
 type Registration struct {
 	reg  metric.Registration
 	once sync.Once
@@ -284,6 +288,7 @@ func (o *otelObserver) observe(ctx context.Context, obs metric.Observer) {
 	for key, g := range groups {
 		readings, err := o.mgr.ReadCounters(key)
 		if err != nil {
+			log().Debug("otel: skipping group; ReadCounters failed", "key", key, "err", err)
 			continue
 		}
 
