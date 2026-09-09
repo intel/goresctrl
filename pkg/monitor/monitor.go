@@ -355,10 +355,12 @@ func (m *Manager) AssignPID(key string, pid int) error {
 	if err != nil {
 		return fmt.Errorf("failed to open tasks file for key %s: %w", key, err)
 	}
-	defer f.Close()
-
 	data := []byte(strconv.Itoa(pid) + "\n")
 	if _, err := f.Write(data); err != nil {
+		f.Close() //nolint:errcheck // report the write error
+		return fmt.Errorf("failed to write pid %d for key %s: %w", pid, key, err)
+	}
+	if err := f.Close(); err != nil {
 		return fmt.Errorf("failed to write pid %d for key %s: %w", pid, key, err)
 	}
 	log().Info("assigned PID to mon_group", "key", key, "pid", pid)
@@ -411,7 +413,7 @@ func pidInTasksFile(path string, pid int) (bool, error) {
 		}
 		return false, fmt.Errorf("failed to open tasks file %s: %w", path, err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // read-only
 
 	target := strconv.Itoa(pid)
 	sc := bufio.NewScanner(f)

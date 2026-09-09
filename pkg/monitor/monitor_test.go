@@ -927,7 +927,8 @@ func TestRemove_ConcurrentEnsureGroup(t *testing.T) {
 
 		var wg sync.WaitGroup
 		wg.Go(func() {
-			mgr.Remove("pod-uid-1")
+			// Racing with EnsureGroup, we're not interested in the error but the state (checked later)
+			_ = mgr.Remove("pod-uid-1")
 		})
 		var ensureErr error
 		wg.Go(func() {
@@ -969,10 +970,11 @@ func TestRemove_ConcurrentReadCounters(t *testing.T) {
 	go func() {
 		defer close(done)
 		for i := 0; i < 100; i++ {
-			mgr.ReadCounters("pod-uid-1")
+			// Racing with Remove below so errors are expected, we only assert on no panic/data race
+			_, _ = mgr.ReadCounters("pod-uid-1")
 		}
 	}()
 	// Give the reader goroutine a head start, then remove.
-	mgr.Remove("pod-uid-1")
+	_ = mgr.Remove("pod-uid-1")
 	<-done
 }
