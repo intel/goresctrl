@@ -16,14 +16,16 @@ limitations under the License.
 
 package isst
 
+// The generated fixed-width ISST UAPI declarations compile on all
+// architectures so packages can import SST everywhere. They are generated
+// from the Linux/amd64 ABI, while the ioctl transport rejects execution
+// outside amd64.
 //go:generate ./gen_types.sh
 
 import (
 	"fmt"
 	"log/slog"
-	"os"
 	"sync"
-	"syscall"
 	"unsafe"
 
 	goresctrlpath "github.com/intel/goresctrl/pkg/path"
@@ -36,20 +38,6 @@ func SetLogger(l *slog.Logger) { log = l }
 
 // DevPath returns the path to the isst_interface device.
 func DevPath() string { return goresctrlpath.Path("dev/isst_interface") }
-
-// Ioctl executes an ioctl on the linux isst_if device driver.
-func Ioctl(ioctl uintptr, req uintptr) error {
-	devPath := DevPath()
-	f, err := os.Open(devPath)
-	if err != nil {
-		return fmt.Errorf("failed to open isst device %q: %v", devPath, err)
-	}
-	defer f.Close() //nolint:errcheck
-	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(f.Fd()), ioctl, req); errno != 0 {
-		return errno
-	}
-	return nil
-}
 
 var (
 	cpuMapMu sync.RWMutex
