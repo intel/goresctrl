@@ -30,7 +30,7 @@ const numClos = 4
 // GetSocketPunits returns the valid TPMI power domain (punit) indices for a socket.
 func GetSocketPunits(socketID uint8) ([]uint8, error) {
 	req := isst.TpmiInstanceCount{Socket_id: socketID}
-	if err := isst.Ioctl(isst.ISST_IF_COUNT_TPMI_INSTANCES, uintptr(unsafe.Pointer(&req))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_COUNT_TPMI_INSTANCES, unsafe.Pointer(&req)); err != nil {
 		return nil, fmt.Errorf("ISST_IF_COUNT_TPMI_INSTANCES for socket %d: %w", socketID, err)
 	}
 	if req.Valid_mask == 0 {
@@ -64,7 +64,7 @@ func GetPunitCoreID(cpu uint16) (uint16, error) {
 // PPGetPerfLevels reads performance level info for a punit.
 func PPGetPerfLevels(socketID, punitID uint8) (isst.PerfLevelInfo, error) {
 	info := isst.PerfLevelInfo{Socket_id: socketID, Power_domain_id: punitID}
-	if err := isst.Ioctl(isst.ISST_IF_PERF_LEVELS, uintptr(unsafe.Pointer(&info))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_PERF_LEVELS, unsafe.Pointer(&info)); err != nil {
 		return isst.PerfLevelInfo{}, fmt.Errorf("ISST_IF_PERF_LEVELS for socket %d punit %d: %w", socketID, punitID, err)
 	}
 	return info, nil
@@ -81,7 +81,7 @@ func CPSetState(socketID, punitID uint8, enable bool, priority uint8) error {
 	if enable {
 		cpState.Enable = 1
 	}
-	if err := isst.Ioctl(isst.ISST_IF_CORE_POWER_STATE, uintptr(unsafe.Pointer(&cpState))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_CORE_POWER_STATE, unsafe.Pointer(&cpState)); err != nil {
 		return fmt.Errorf("ISST_IF_CORE_POWER_STATE set for socket %d punit %d: %w", socketID, punitID, err)
 	}
 	return nil
@@ -90,12 +90,12 @@ func CPSetState(socketID, punitID uint8, enable bool, priority uint8) error {
 // CPSetPriorityType updates the CP priority type for one punit, preserving the current enable state.
 func CPSetPriorityType(socketID, punitID uint8, priority uint8) error {
 	cpState := isst.CorePower{Socket_id: socketID, Power_domain_id: punitID}
-	if err := isst.Ioctl(isst.ISST_IF_CORE_POWER_STATE, uintptr(unsafe.Pointer(&cpState))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_CORE_POWER_STATE, unsafe.Pointer(&cpState)); err != nil {
 		return fmt.Errorf("ISST_IF_CORE_POWER_STATE for socket %d punit %d: %w", socketID, punitID, err)
 	}
 	cpState.Get_set = 1
 	cpState.Priority_type = priority
-	if err := isst.Ioctl(isst.ISST_IF_CORE_POWER_STATE, uintptr(unsafe.Pointer(&cpState))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_CORE_POWER_STATE, unsafe.Pointer(&cpState)); err != nil {
 		return fmt.Errorf("ISST_IF_CORE_POWER_STATE set for socket %d punit %d: %w", socketID, punitID, err)
 	}
 	return nil
@@ -113,7 +113,7 @@ func CPGetPriorityType(socketID, punitID uint8) (uint8, error) {
 // CPGetState reads the SST-CP state for a punit.
 func CPGetState(socketID, punitID uint8) (isst.CorePower, error) {
 	cpState := isst.CorePower{Socket_id: socketID, Power_domain_id: punitID}
-	if err := isst.Ioctl(isst.ISST_IF_CORE_POWER_STATE, uintptr(unsafe.Pointer(&cpState))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_CORE_POWER_STATE, unsafe.Pointer(&cpState)); err != nil {
 		return isst.CorePower{}, fmt.Errorf("ISST_IF_CORE_POWER_STATE for socket %d punit %d: %w", socketID, punitID, err)
 	}
 	return cpState, nil
@@ -131,7 +131,7 @@ func ClosSetParam(socketID, punitID, clos, proportional uint8, minFreq, maxFreq 
 		Min_freq_mhz:    minFreq,
 		Max_freq_mhz:    maxFreq,
 	}
-	if err := isst.Ioctl(isst.ISST_IF_CLOS_PARAM, uintptr(unsafe.Pointer(&param))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_CLOS_PARAM, unsafe.Pointer(&param)); err != nil {
 		return fmt.Errorf("ISST_IF_CLOS_PARAM set for clos %d punit %d: %w", clos, punitID, err)
 	}
 	return nil
@@ -144,7 +144,7 @@ func ClosGetParam(socketID, punitID, closIdx uint8) (isst.ClosParam, error) {
 		Power_domain_id: punitID,
 		Clos:            closIdx,
 	}
-	if err := isst.Ioctl(isst.ISST_IF_CLOS_PARAM, uintptr(unsafe.Pointer(&closParam))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_CLOS_PARAM, unsafe.Pointer(&closParam)); err != nil {
 		return isst.ClosParam{}, fmt.Errorf("ISST_IF_CLOS_PARAM for clos %d punit %d: %w", closIdx, punitID, err)
 	}
 	return closParam, nil
@@ -173,7 +173,7 @@ func ClosAssociate(socketID, punitID uint8, punitCoreID uint16, clos uint8) erro
 			Clos:            uint16(clos),
 		}},
 	}
-	if err := isst.Ioctl(isst.ISST_IF_CLOS_ASSOC, uintptr(unsafe.Pointer(&req))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_CLOS_ASSOC, unsafe.Pointer(&req)); err != nil {
 		return fmt.Errorf("ISST_IF_CLOS_ASSOC set for socket %d punit %d core %d clos %d: %w", socketID, punitID, punitCoreID, clos, err)
 	}
 	return nil
@@ -190,7 +190,7 @@ func GetCPUClosID(socketID, punitID uint8, punitCoreID uint16) (uint8, error) {
 			Logical_cpu:     punitCoreID,
 		}},
 	}
-	if err := isst.Ioctl(isst.ISST_IF_CLOS_ASSOC, uintptr(unsafe.Pointer(&req))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_CLOS_ASSOC, unsafe.Pointer(&req)); err != nil {
 		return 0, fmt.Errorf("ISST_IF_CLOS_ASSOC for socket %d punit %d core %d: %w", socketID, punitID, punitCoreID, err)
 	}
 	return uint8(req.Assoc_info[0].Clos), nil
@@ -199,7 +199,7 @@ func GetCPUClosID(socketID, punitID uint8, punitCoreID uint16) (uint8, error) {
 // BFSetStatus enables or disables SST-BF for one punit, preserving the current TF state.
 func BFSetStatus(socketID, punitID uint8, enable bool) error {
 	perfInfo := isst.PerfLevelInfo{Socket_id: socketID, Power_domain_id: punitID}
-	if err := isst.Ioctl(isst.ISST_IF_PERF_LEVELS, uintptr(unsafe.Pointer(&perfInfo))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_PERF_LEVELS, unsafe.Pointer(&perfInfo)); err != nil {
 		return fmt.Errorf("ISST_IF_PERF_LEVELS for socket %d punit %d: %w", socketID, punitID, err)
 	}
 	feature := perfInfo.Feature_state & 0x02 // preserve TF bit
@@ -207,7 +207,7 @@ func BFSetStatus(socketID, punitID uint8, enable bool) error {
 		feature |= 0x01
 	}
 	ctrl := isst.PerfFeatureControl{Socket_id: socketID, Power_domain_id: punitID, Feature: feature}
-	if err := isst.Ioctl(isst.ISST_IF_PERF_SET_FEATURE, uintptr(unsafe.Pointer(&ctrl))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_PERF_SET_FEATURE, unsafe.Pointer(&ctrl)); err != nil {
 		return fmt.Errorf("ISST_IF_PERF_SET_FEATURE (BF=%v) for socket %d punit %d: %w", enable, socketID, punitID, err)
 	}
 	return nil
@@ -221,7 +221,7 @@ func BFGetCoreMask(socketID, punitID, level uint8) (uint64, error) {
 		Level:           level,
 		Punit_cpu_map:   1,
 	}
-	if err := isst.Ioctl(isst.ISST_IF_GET_BASE_FREQ_CPU_MASK, uintptr(unsafe.Pointer(&cpuMask))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_GET_BASE_FREQ_CPU_MASK, unsafe.Pointer(&cpuMask)); err != nil {
 		return 0, fmt.Errorf("ISST_IF_GET_BASE_FREQ_CPU_MASK for socket %d punit %d: %w", socketID, punitID, err)
 	}
 	return cpuMask.Mask, nil
@@ -231,7 +231,7 @@ func BFGetCoreMask(socketID, punitID, level uint8) (uint64, error) {
 // preserving the current BF state.
 func TFSetStatus(socketID, punitID uint8, enable bool) error {
 	perfInfo := isst.PerfLevelInfo{Socket_id: socketID, Power_domain_id: punitID}
-	if err := isst.Ioctl(isst.ISST_IF_PERF_LEVELS, uintptr(unsafe.Pointer(&perfInfo))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_PERF_LEVELS, unsafe.Pointer(&perfInfo)); err != nil {
 		return fmt.Errorf("ISST_IF_PERF_LEVELS for socket %d punit %d: %w", socketID, punitID, err)
 	}
 	feature := perfInfo.Feature_state & 0x01 // preserve BF bit
@@ -239,7 +239,7 @@ func TFSetStatus(socketID, punitID uint8, enable bool) error {
 		feature |= 0x02
 	}
 	ctrl := isst.PerfFeatureControl{Socket_id: socketID, Power_domain_id: punitID, Feature: feature}
-	if err := isst.Ioctl(isst.ISST_IF_PERF_SET_FEATURE, uintptr(unsafe.Pointer(&ctrl))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_PERF_SET_FEATURE, unsafe.Pointer(&ctrl)); err != nil {
 		return fmt.Errorf("ISST_IF_PERF_SET_FEATURE (TF=%v) for socket %d punit %d: %w", enable, socketID, punitID, err)
 	}
 	return nil
@@ -253,7 +253,7 @@ func PerfLevelGetCPUMask(socketID, punitID, level uint8) (uint64, error) {
 		Level:           level,
 		Punit_cpu_map:   1,
 	}
-	if err := isst.Ioctl(isst.ISST_IF_GET_PERF_LEVEL_CPU_MASK, uintptr(unsafe.Pointer(&cpuMask))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_GET_PERF_LEVEL_CPU_MASK, unsafe.Pointer(&cpuMask)); err != nil {
 		return 0, fmt.Errorf("ISST_IF_GET_PERF_LEVEL_CPU_MASK for socket %d punit %d level %d: %w", socketID, punitID, level, err)
 	}
 	return cpuMask.Mask, nil
@@ -262,7 +262,7 @@ func PerfLevelGetCPUMask(socketID, punitID, level uint8) (uint64, error) {
 // BFGetInfo reads SST-BF frequency info for a performance level.
 func BFGetInfo(socketID, punitID, level uint8) (isst.BaseFreqInfo, error) {
 	info := isst.BaseFreqInfo{Socket_id: socketID, Power_domain_id: punitID, Level: uint16(level)}
-	if err := isst.Ioctl(isst.ISST_IF_GET_BASE_FREQ_INFO, uintptr(unsafe.Pointer(&info))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_GET_BASE_FREQ_INFO, unsafe.Pointer(&info)); err != nil {
 		return isst.BaseFreqInfo{}, fmt.Errorf("ISST_IF_GET_BASE_FREQ_INFO for socket %d punit %d level %d: %w", socketID, punitID, level, err)
 	}
 	return info, nil
@@ -271,7 +271,7 @@ func BFGetInfo(socketID, punitID, level uint8) (isst.BaseFreqInfo, error) {
 // TFGetInfo reads SST-TF frequency info for a performance level.
 func TFGetInfo(socketID, punitID, level uint8) (isst.TurboFreqInfo, error) {
 	info := isst.TurboFreqInfo{Socket_id: socketID, Power_domain_id: punitID, Level: uint16(level)}
-	if err := isst.Ioctl(isst.ISST_IF_GET_TURBO_FREQ_INFO, uintptr(unsafe.Pointer(&info))); err != nil {
+	if err := isst.Ioctl(isst.ISST_IF_GET_TURBO_FREQ_INFO, unsafe.Pointer(&info)); err != nil {
 		return isst.TurboFreqInfo{}, fmt.Errorf("ISST_IF_GET_TURBO_FREQ_INFO for socket %d punit %d level %d: %w", socketID, punitID, level, err)
 	}
 	return info, nil
