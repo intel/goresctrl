@@ -38,14 +38,14 @@ func SetLogger(l *slog.Logger) { log = l }
 func DevPath() string { return goresctrlpath.Path("dev/isst_interface") }
 
 // Ioctl executes an ioctl on the linux isst_if device driver.
-func Ioctl(ioctl uintptr, req uintptr) error {
+func Ioctl(ioctl uintptr, req unsafe.Pointer) error {
 	devPath := DevPath()
 	f, err := os.Open(devPath)
 	if err != nil {
 		return fmt.Errorf("failed to open isst device %q: %v", devPath, err)
 	}
 	defer f.Close() //nolint:errcheck
-	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(f.Fd()), ioctl, req); errno != 0 {
+	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), ioctl, uintptr(req)); errno != 0 {
 		return errno
 	}
 	return nil
@@ -79,7 +79,7 @@ func getCPUMapping(cpu uint16) (uint16, error) {
 		Cmd_count: 1,
 		Cpu_map:   [1]CPUMap{{Logical_cpu: uint32(cpu)}},
 	}
-	if err := Ioctl(ISST_IF_GET_PHY_ID, uintptr(unsafe.Pointer(&req))); err != nil {
+	if err := Ioctl(ISST_IF_GET_PHY_ID, unsafe.Pointer(&req)); err != nil {
 		return 0, fmt.Errorf("failed to get CPU mapping for cpu %d: %v", cpu, err)
 	}
 	return uint16(req.Cpu_map[0].Physical_cpu), nil
@@ -98,7 +98,7 @@ func SendMboxCmd(cpu uint16, cmd uint16, subCmd uint16, parameter uint32, reqDat
 		}},
 	}
 	log.Debug("MBOX SEND", "cpu", cpu, "cmd", cmd, "subCmd", subCmd, SlogHex("data", reqData))
-	if err := Ioctl(ISST_IF_MBOX_COMMAND, uintptr(unsafe.Pointer(&req))); err != nil {
+	if err := Ioctl(ISST_IF_MBOX_COMMAND, unsafe.Pointer(&req)); err != nil {
 		return 0, fmt.Errorf("mbox command failed with %v", err)
 	}
 	log.Debug("MBOX RECV", SlogHex("data", req.Mbox_cmd[0].Resp_data))
@@ -121,7 +121,7 @@ func SendMMIOCmd(cpu uint16, reg uint32, value uint32, doWrite bool) (uint32, er
 		}},
 	}
 	log.Debug("MMIO SEND", "cpu", cpu, "reg", reg, SlogHex("data", value), "write", doWrite)
-	if err := Ioctl(ISST_IF_IO_CMD, uintptr(unsafe.Pointer(&req))); err != nil {
+	if err := Ioctl(ISST_IF_IO_CMD, unsafe.Pointer(&req)); err != nil {
 		return 0, fmt.Errorf("MMIO command failed with %v", err)
 	}
 	log.Debug("MMIO RECV", SlogHex("data", req.Io_reg[0].Value))
@@ -136,7 +136,7 @@ func SlogHex(key string, val uint32) slog.Attr {
 // GetPlatformAPIVersion gets the ISST API version.
 func GetPlatformAPIVersion() (int, error) {
 	var info PlatformInfo
-	if err := Ioctl(ISST_IF_GET_PLATFORM_INFO, uintptr(unsafe.Pointer(&info))); err != nil {
+	if err := Ioctl(ISST_IF_GET_PLATFORM_INFO, unsafe.Pointer(&info)); err != nil {
 		return 0, fmt.Errorf("failed to get ISST platform info: %w", err)
 	}
 	return int(info.Api_version), nil

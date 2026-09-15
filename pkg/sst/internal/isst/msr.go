@@ -37,7 +37,7 @@ func SendMSRCmd(cpu uint16, msr uint64, write bool, data *uint64) error {
 			Data:        *data,
 		}},
 	}
-	if err := Ioctl(ISST_IF_MSR_COMMAND, uintptr(unsafe.Pointer(&req))); err != nil {
+	if err := Ioctl(ISST_IF_MSR_COMMAND, unsafe.Pointer(&req)); err != nil {
 		return fmt.Errorf("MSR 0x%x command for cpu %d: %w", msr, cpu, err)
 	}
 	*data = req.Msr_cmd[0].Data
