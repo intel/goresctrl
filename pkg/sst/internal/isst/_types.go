@@ -17,9 +17,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// This file is used for auto-generation of types_amd64.go
+// This file is used for auto-generation of types.go. The generated
+// declarations follow the Linux/amd64 ABI but compile on every architecture
+// so that importers build everywhere. Only the amd64 ioctl transport can
+// execute them.
 package isst
 
+// #if !defined(__linux__) || !defined(__x86_64__)
+// #error "ISST types must be generated with a Linux amd64 C compiler"
+// #endif
 // #include <linux/isst_if.h>
 // #include <linux/ioctl.h>
 //
