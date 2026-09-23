@@ -190,7 +190,8 @@ type otelObserver struct {
 // not read — so instruments are registered even when the kernel reports
 // temporary placeholder values like "Unavailable".
 func (o *otelObserver) discoverAndRegister() error {
-	counters, err := discoverCounters(filepath.Join(o.mgr.root, "mon_data"))
+	monDataPath := filepath.Join(o.mgr.root, "mon_data")
+	counters, err := discoverCounters(monDataPath)
 	if err != nil {
 		return err
 	}
@@ -215,6 +216,7 @@ func (o *otelObserver) discoverAndRegister() error {
 	}
 
 	if len(observables) == 0 {
+		log().Warn("otel: no resctrl counters discovered; nothing will be exported", "path", monDataPath)
 		return nil
 	}
 
