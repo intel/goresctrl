@@ -158,6 +158,7 @@ func (m *Manager) RegisterOTelInstruments(meter metric.Meter, opts ...OTelOption
 		cfg:    cfg,
 		meter:  meter,
 		instrs: make(map[string]metric.Observable),
+		warned: make(map[string]bool),
 		accum:  newOTelAccumulator(),
 	}
 
@@ -178,6 +179,7 @@ type otelObserver struct {
 
 	mu     sync.Mutex
 	instrs map[string]metric.Observable // instrName → instrument
+	warned map[string]bool              // undiscovered instrument names already warned about
 	accum  *otelAccumulator
 	reg    metric.Registration // batch callback registration; nil if none
 }
@@ -307,9 +309,17 @@ func (o *otelObserver) observe(ctx context.Context, obs metric.Observer) {
 			instrName := InstrumentName(r.Domain, r.Name)
 			o.mu.Lock()
 			instr := o.instrs[instrName]
+			warned := o.warned[instrName]
+			if instr == nil && !warned {
+				o.warned[instrName] = true
+			}
 			o.mu.Unlock()
 			if instr == nil {
-				log().Warn("otel: unknown counter skipped (not discovered at registration)",
+				logUnknown := log().Debug
+				if !warned {
+					logUnknown = log().Warn
+				}
+				logUnknown("otel: unknown counter skipped (not discovered at registration)",
 					"instrument", instrName, "domain", r.Domain, "counter", r.Name)
 				continue
 			}
