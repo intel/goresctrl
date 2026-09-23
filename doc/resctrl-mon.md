@@ -114,7 +114,7 @@ mgr.Reconcile(liveKeys)
 readings, _ := mgr.ReadCounters(podUID)
 for _, r := range readings {
     // r.Kind: monitor.Gauge (instantaneous) or monitor.Cumulative (monotonic counter)
-    // r.Unit: UCUM where available ("By", "J"), otherwise descriptive ("farads", "")
+    // r.Unit: UCUM unit of the raw kernel value where known ("By", "J", "nF"), otherwise ""
     fmt.Printf("%s/%s = %f (%v, %s)\n", r.Domain, r.Name, r.Value, r.Kind, r.Unit)
 }
 ```

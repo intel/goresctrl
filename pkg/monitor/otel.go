@@ -107,8 +107,8 @@ func (r *Registration) Close() error {
 //	mon_L3_00/llc_occupancy          → l3.llc.occupancy           (unit: By)
 //	mon_L3_00/mbm_local_bytes        → l3.mbm.local.bytes         (unit: By)
 //	mon_L3_00/mbm_total_bytes        → l3.mbm.total.bytes         (unit: By)
-//	mon_PERF_PKG_00/core_energy      → perf.core.energy            (unit: J)
-//	mon_PERF_PKG_00/activity         → perf.activity                (unit: farads)
+//	mon_PERF_PKG_00/core_energy      → perf.core.energy           (unit: J)
+//	mon_PERF_PKG_00/activity         → perf.activity              (unit: farads; kernel nF × 1e-9)
 //	mon_PERF_PKG_00/c1_res           → perf.c1.res
 //	mon_PERF_PKG_00/c6_res           → perf.c6.res
 //	mon_PERF_PKG_00/uops_retired     → perf.uops.retired
@@ -202,7 +202,8 @@ func (o *otelObserver) discoverAndRegister() error {
 			continue
 		}
 		seen[name] = struct{}{}
-		instr, err := o.createInstrument(name, metaKind(c.counter), metaUnit(c.counter))
+		unit, _ := metaOTel(c.counter)
+		instr, err := o.createInstrument(name, metaKind(c.counter), unit)
 		if err != nil {
 			return err
 		}
@@ -316,6 +317,9 @@ func (o *otelObserver) observe(ctx context.Context, obs metric.Observer) {
 			if r.Kind == Cumulative {
 				val = o.accum.monotonic(key, r.Domain, r.Name, val, g.Gen())
 			}
+			// Scale after accumulating so accumulator state stays in kernel units.
+			_, scale := metaOTel(r.Name)
+			val *= scale
 
 			attrs := make([]attribute.KeyValue, 0, len(groupAttrs)+2)
 			attrs = append(attrs, attribute.String("domain.id", DomainInstance(r.Domain)))
