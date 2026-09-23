@@ -294,7 +294,7 @@ func (m *Manager) EnsureGroup(key, rdtClass string) (*Group, error) {
 			return nil, fmt.Errorf("failed to create mon_group %s: %w", monGroupDir, err)
 		}
 	} else {
-		log().Info("created mon_group", "key", key, "dir", monGroupDir)
+		log().Debug("created mon_group", "key", key, "dir", monGroupDir)
 	}
 
 	// Bump the monotonic generation on every (re)creation so a remove→recreate
@@ -363,7 +363,7 @@ func (m *Manager) AssignPID(key string, pid int) error {
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("failed to write pid %d for key %s: %w", pid, key, err)
 	}
-	log().Info("assigned PID to mon_group", "key", key, "pid", pid)
+	log().Debug("assigned PID to mon_group", "key", key, "pid", pid)
 	return nil
 }
 
@@ -485,7 +485,7 @@ func (m *Manager) Remove(key string) error {
 	}
 
 	delete(m.entries, key)
-	log().Info("removed mon_group", "key", key, "dir", e.dir)
+	log().Debug("removed mon_group", "key", key, "dir", e.dir)
 	return nil
 }
 
