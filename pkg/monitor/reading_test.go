@@ -50,8 +50,10 @@ func TestReadCounters_MultiDomain(t *testing.T) {
 	// Build a lookup map: domain/name -> value
 	type key struct{ domain, name string }
 	got := make(map[key]float64)
+	units := make(map[key]string)
 	for _, r := range readings {
 		got[key{r.Domain, r.Name}] = r.Value
+		units[key{r.Domain, r.Name}] = r.Unit
 	}
 
 	// L3 domain — integer values parse as float64.
@@ -61,6 +63,11 @@ func TestReadCounters_MultiDomain(t *testing.T) {
 	// PERF_PKG domain — float values.
 	assert.InDelta(t, 54446119.644974, got[key{"mon_PERF_PKG_00", "core_energy"}], 0.001)
 	assert.InDelta(t, 1042.371582, got[key{"mon_PERF_PKG_00", "activity"}], 0.001)
+
+	// Readings carry the raw kernel value and unit (activity is nanofarads).
+	assert.Equal(t, "J", units[key{"mon_PERF_PKG_00", "core_energy"}])
+	assert.Equal(t, "nF", units[key{"mon_PERF_PKG_00", "activity"}])
+	assert.Equal(t, "By", units[key{"mon_L3_00", "mbm_total_bytes"}])
 
 	// mon_L3_01 has only "Unavailable" — no reading should be emitted for it.
 	_, hasL301 := got[key{"mon_L3_01", "llc_occupancy"}]
@@ -196,4 +203,17 @@ func TestMetaKind_UnknownDefaultsToGauge(t *testing.T) {
 	// Unknown/future counters default to Gauge so they bypass the monotonic
 	// accumulator rather than risk corrupting a real gauge.
 	assert.Equal(t, Gauge, metaKind("some_future_counter"))
+}
+
+func TestMetaOTel(t *testing.T) {
+	// Counters listed in otelExport are exported in its unit and scale.
+	for name, want := range otelExport {
+		unit, scale := metaOTel(name)
+		assert.Equal(t, want.unit, unit, name)
+		assert.Equal(t, want.scale, scale, name)
+	}
+	// Other counters are exported in their raw unit, unscaled.
+	unit, scale := metaOTel("core_energy")
+	assert.Equal(t, metaUnit("core_energy"), unit)
+	assert.Equal(t, 1.0, scale)
 }

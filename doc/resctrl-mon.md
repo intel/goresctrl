@@ -105,6 +105,9 @@ mgr.AssignPID(podUID, pid)
 // Tie the group's lifetime to the pod, not to individual containers — a
 // container restart reuses the sandbox, and releasing the RMID early would
 // hand the replacement a fresh RMID whose counters carry residual values.
+// Remove only when the pod's last sandbox is gone: kubelet can create a new
+// sandbox for the same pod UID and garbage-collect the old one while the pod
+// keeps running.
 mgr.Remove(podUID)
 
 // Crash recovery: remove orphaned groups not in the live set
@@ -114,9 +117,51 @@ mgr.Reconcile(liveKeys)
 readings, _ := mgr.ReadCounters(podUID)
 for _, r := range readings {
     // r.Kind: monitor.Gauge (instantaneous) or monitor.Cumulative (monotonic counter)
-    // r.Unit: UCUM where available ("By", "J"), otherwise descriptive ("farads", "")
+    // r.Unit: UCUM unit of the raw kernel value where known ("By", "J", "nF"), otherwise ""
     fmt.Printf("%s/%s = %f (%v, %s)\n", r.Domain, r.Name, r.Value, r.Kind, r.Unit)
 }
+```
+
+## OpenTelemetry Export
+
+`Manager.RegisterOTelInstruments` registers one observable instrument per
+counter discovered under the resctrl root's `mon_data`. Instrument names are
+derived mechanically from the counter files (see `InstrumentName`), cumulative
+counters pass through a monotonic accumulator, and every data point carries
+`domain.id` and `domain.name` attributes.
+
+| resctrl file | Instrument | Kind | Unit | Exported value |
+|---|---|---|---|---|
+| `mon_L3_*/llc_occupancy` | `l3.llc.occupancy` | gauge | `By` | raw |
+| `mon_L3_*/mbm_local_bytes` | `l3.mbm.local.bytes` | counter | `By` | raw |
+| `mon_L3_*/mbm_total_bytes` | `l3.mbm.total.bytes` | counter | `By` | raw |
+| `mon_PERF_PKG_*/core_energy` | `perf.core.energy` | counter | `J` | raw |
+| `mon_PERF_PKG_*/activity` | `perf.activity` | counter | `farads` | raw nanofarads × 1e-9 |
+| other `mon_PERF_PKG_*` files | `perf.<name>` | counter if known, else gauge | none | raw |
+
+`ReadCounters` always returns the raw kernel value; for `activity` its `Unit`
+is `nF`.
+
+Prometheus names are produced by the consumer's exporter and depend on its
+translation strategy:
+
+| Instrument | `UnderscoreEscapingWithSuffixes` | `NoUTF8EscapingWithSuffixes` |
+|---|---|---|
+| `l3.llc.occupancy` | `l3_llc_occupancy_bytes` | `l3.llc.occupancy_bytes` |
+| `l3.mbm.local.bytes` | `l3_mbm_local_bytes_total` | `l3.mbm.local.bytes_total` |
+| `l3.mbm.total.bytes` | `l3_mbm_bytes_total` | `l3.mbm.total.bytes_total` |
+| `perf.core.energy` | `perf_core_energy_joules_total` | `perf.core.energy_joules_total` |
+| `perf.activity` | `perf_activity_farads_total` | `perf.activity_farads_total` |
+
+The underscore strategy drops the word `total` from `l3.mbm.total.bytes`.
+Older `go.opentelemetry.io/otel/exporters/prometheus` releases choose their
+default strategy from the global name validation scheme, so select one
+explicitly:
+
+```go
+exp, err := prometheus.New(
+    prometheus.WithTranslationStrategy(otlptranslator.UnderscoreEscapingWithSuffixes),
+)
 ```
 
 ## RMID Exhaustion

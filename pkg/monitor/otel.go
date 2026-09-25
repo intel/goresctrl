@@ -107,8 +107,8 @@ func (r *Registration) Close() error {
 //	mon_L3_00/llc_occupancy          → l3.llc.occupancy           (unit: By)
 //	mon_L3_00/mbm_local_bytes        → l3.mbm.local.bytes         (unit: By)
 //	mon_L3_00/mbm_total_bytes        → l3.mbm.total.bytes         (unit: By)
-//	mon_PERF_PKG_00/core_energy      → perf.core.energy            (unit: J)
-//	mon_PERF_PKG_00/activity         → perf.activity                (unit: farads)
+//	mon_PERF_PKG_00/core_energy      → perf.core.energy           (unit: J)
+//	mon_PERF_PKG_00/activity         → perf.activity              (unit: farads; kernel nF × 1e-9)
 //	mon_PERF_PKG_00/c1_res           → perf.c1.res
 //	mon_PERF_PKG_00/c6_res           → perf.c6.res
 //	mon_PERF_PKG_00/uops_retired     → perf.uops.retired
@@ -131,7 +131,8 @@ func (r *Registration) Close() error {
 // L3 instrument names are similar to pkg/rdt's RegisterOpenTelemetryInstruments
 // but preserve the _bytes counter suffix (e.g. l3.mbm.total.bytes vs
 // pkg/rdt's l3.mbm.total). This maintains backward compatibility with the
-// kernel counter file names as a mechanical derivation.
+// kernel counter file names as a mechanical derivation. See InstrumentName for
+// how Prometheus exporters render these names.
 //
 // Each metric carries a "domain.id" attribute with the numeric instance
 // (e.g. "00") and a "domain.name" attribute with the full domain directory
@@ -157,6 +158,7 @@ func (m *Manager) RegisterOTelInstruments(meter metric.Meter, opts ...OTelOption
 		cfg:    cfg,
 		meter:  meter,
 		instrs: make(map[string]metric.Observable),
+		warned: make(map[string]bool),
 		accum:  newOTelAccumulator(),
 	}
 
@@ -177,6 +179,7 @@ type otelObserver struct {
 
 	mu     sync.Mutex
 	instrs map[string]metric.Observable // instrName → instrument
+	warned map[string]bool              // undiscovered instrument names already warned about
 	accum  *otelAccumulator
 	reg    metric.Registration // batch callback registration; nil if none
 }
@@ -187,7 +190,8 @@ type otelObserver struct {
 // not read — so instruments are registered even when the kernel reports
 // temporary placeholder values like "Unavailable".
 func (o *otelObserver) discoverAndRegister() error {
-	counters, err := discoverCounters(filepath.Join(o.mgr.root, "mon_data"))
+	monDataPath := filepath.Join(o.mgr.root, "mon_data")
+	counters, err := discoverCounters(monDataPath)
 	if err != nil {
 		return err
 	}
@@ -202,7 +206,8 @@ func (o *otelObserver) discoverAndRegister() error {
 			continue
 		}
 		seen[name] = struct{}{}
-		instr, err := o.createInstrument(name, metaKind(c.counter), metaUnit(c.counter))
+		unit, _ := metaOTel(c.counter)
+		instr, err := o.createInstrument(name, metaKind(c.counter), unit)
 		if err != nil {
 			return err
 		}
@@ -211,6 +216,7 @@ func (o *otelObserver) discoverAndRegister() error {
 	}
 
 	if len(observables) == 0 {
+		log().Warn("otel: no resctrl counters discovered; nothing will be exported", "path", monDataPath)
 		return nil
 	}
 
@@ -305,9 +311,17 @@ func (o *otelObserver) observe(ctx context.Context, obs metric.Observer) {
 			instrName := InstrumentName(r.Domain, r.Name)
 			o.mu.Lock()
 			instr := o.instrs[instrName]
+			warned := o.warned[instrName]
+			if instr == nil && !warned {
+				o.warned[instrName] = true
+			}
 			o.mu.Unlock()
 			if instr == nil {
-				log().Warn("otel: unknown counter skipped (not discovered at registration)",
+				logUnknown := log().Debug
+				if !warned {
+					logUnknown = log().Warn
+				}
+				logUnknown("otel: unknown counter skipped (not discovered at registration)",
 					"instrument", instrName, "domain", r.Domain, "counter", r.Name)
 				continue
 			}
@@ -316,6 +330,9 @@ func (o *otelObserver) observe(ctx context.Context, obs metric.Observer) {
 			if r.Kind == Cumulative {
 				val = o.accum.monotonic(key, r.Domain, r.Name, val, g.Gen())
 			}
+			// Scale after accumulating so accumulator state stays in kernel units.
+			_, scale := metaOTel(r.Name)
+			val *= scale
 
 			attrs := make([]attribute.KeyValue, 0, len(groupAttrs)+2)
 			attrs = append(attrs, attribute.String("domain.id", DomainInstance(r.Domain)))
@@ -343,21 +360,22 @@ func (o *otelObserver) observe(ctx context.Context, obs metric.Observer) {
 // --- Naming helpers (exported for use by callers building custom export) ---
 
 // InstrumentName derives the OTel instrument name from a resctrl domain
-// directory name and counter file name.
+// directory name and counter file name: the domain's resource prefix followed
+// by the counter file name with "_" replaced by ".". The mapping is mechanical
+// (the _bytes suffix is kept) so every instrument name identifies its resctrl
+// file.
 //
-// The counter file name is converted to dot-separated segments and prepended
-// with the domain's resource prefix. The _bytes suffix is preserved (not
-// stripped) so that the OTel→Prometheus bridge's unit-suffix deduplication
-// produces correct names without colliding with the counter _total suffix
-// convention.
+// Prometheus names are chosen by the consumer's exporter, not by this package,
+// and depend on its translation strategy. For the counter l3.mbm.total.bytes
+// (unit By):
 //
-// NOTE: This intentionally diverges from pkg/rdt's RegisterOpenTelemetryInstruments
-// which uses names like "l3.mbm.total" (stripping _bytes). That approach
-// produces incorrect Prometheus names via the OTel bridge: the bridge treats
-// the trailing "total" as a counter suffix, yielding "l3_mbm_bytes_total"
-// instead of the expected "l3_mbm_total_bytes_total". By preserving _bytes in
-// the OTel name, the bridge sees the unit is already present and only appends
-// _total for counters, producing the correct final name.
+//	UnderscoreEscapingWithSuffixes → l3_mbm_bytes_total
+//	NoUTF8EscapingWithSuffixes     → l3.mbm.total.bytes_total
+//
+// The underscore strategy removes every "total" word from a counter name
+// before appending _total, so pkg/rdt's l3.mbm.total renders the same way.
+// Consumers should select a strategy explicitly, e.g. with
+// prometheus.WithTranslationStrategy(otlptranslator.UnderscoreEscapingWithSuffixes).
 //
 // Examples:
 //

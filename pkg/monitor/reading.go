@@ -46,7 +46,7 @@ type Reading struct {
 	Name   string      // counter file name, e.g. "llc_occupancy", "core_energy"
 	Value  float64     // parsed value (float to cover core_energy/activity)
 	Kind   ReadingKind // Gauge or Cumulative
-	Unit   string      // UCUM unit where available (e.g. "By", "J"), otherwise descriptive (e.g. "farads")
+	Unit   string      // UCUM unit of Value where known (e.g. "By", "J", "nF"), otherwise ""
 }
 
 // readingMeta maps known counter names to their kind and unit.
@@ -58,9 +58,9 @@ var readingMeta = map[string]struct {
 	"mbm_total_bytes": {Cumulative, "By"},
 	"mbm_local_bytes": {Cumulative, "By"},
 	"core_energy":     {Cumulative, "J"},
-	// activity accumulates dynamic capacitance; its rate of change is the
-	// workload's dynamic capacitance (Cdyn)
-	"activity":             {Cumulative, "farads"},
+	// activity accumulates dynamic capacitance in nanofarads; its rate of
+	// change is the workload's dynamic capacitance (Cdyn)
+	"activity":             {Cumulative, "nF"},
 	"c1_res":               {Cumulative, ""},
 	"c6_res":               {Cumulative, ""},
 	"uops_retired":         {Cumulative, ""},
@@ -162,4 +162,23 @@ func metaUnit(name string) string {
 		return m.unit
 	}
 	return ""
+}
+
+// otelExport overrides the exported OTel unit and scale for counters whose raw
+// kernel unit is not a base unit.
+var otelExport = map[string]struct {
+	unit  string
+	scale float64
+}{
+	// "farads" rather than UCUM "F": otlptranslator has no farad suffix mapping.
+	"activity": {"farads", 1e-9},
+}
+
+// metaOTel returns the OTel instrument unit for a counter and the factor that
+// converts its raw value into that unit.
+func metaOTel(name string) (unit string, scale float64) {
+	if o, ok := otelExport[name]; ok {
+		return o.unit, o.scale
+	}
+	return metaUnit(name), 1
 }
