@@ -116,6 +116,47 @@ func SetUncoreMaxFreq(pkg, die ID, freqKhz int) error {
 	return setUncoreFreqValue(pkg, die, "max_freq_khz", freqKhz)
 }
 
+// GetUncoreMinFreq returns the current minimum uncore frequency of a CPU die in kHz.
+func GetUncoreMinFreq(pkg, die ID) (int, error) {
+	return getUncoreFreqValue(pkg, die, "min_freq_khz")
+}
+
+// GetUncoreMaxFreq returns the current maximum uncore frequency of a CPU die in kHz.
+func GetUncoreMaxFreq(pkg, die ID) (int, error) {
+	return getUncoreFreqValue(pkg, die, "max_freq_khz")
+}
+
+// GetUncoreInitialMinFreq returns the hardware default minimum uncore
+// frequency of a CPU die in kHz.
+func GetUncoreInitialMinFreq(pkg, die ID) (int, error) {
+	return getUncoreFreqValue(pkg, die, "initial_min_freq_khz")
+}
+
+// GetUncoreInitialMaxFreq returns the hardware default maximum uncore
+// frequency of a CPU die in kHz.
+func GetUncoreInitialMaxFreq(pkg, die ID) (int, error) {
+	return getUncoreFreqValue(pkg, die, "initial_max_freq_khz")
+}
+
+// ResetUncoreFreq restores the uncore frequency range of a CPU die to
+// the hardware defaults.
+func ResetUncoreFreq(pkg, die ID) error {
+	hwMin, err := GetUncoreInitialMinFreq(pkg, die)
+	if err != nil {
+		return err
+	}
+	hwMax, err := GetUncoreInitialMaxFreq(pkg, die)
+	if err != nil {
+		return err
+	}
+	// Widen the range first so that neither write is rejected by the
+	// driver for crossing the other limit.
+	if err := writeFileInt(uncoreFreqPath(pkg, die, "min_freq_khz"), hwMin); err != nil {
+		return err
+	}
+	return writeFileInt(uncoreFreqPath(pkg, die, "max_freq_khz"), hwMax)
+}
+
 func uncoreFreqPath(pkg, die ID, attribute string) string {
 	return goresctrlpath.Path(SysfsUncoreBasepath, fmt.Sprintf("package_%02d_die_%02d", pkg, die), attribute)
 }
